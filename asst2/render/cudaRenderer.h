@@ -17,6 +17,9 @@ private:
     float* color;
     float* radius;
 
+    int regionWidth;
+    int regionHeight;
+
     float* cudaDevicePosition;
     float* cudaDeviceVelocity;
     float* cudaDeviceColor;
