@@ -270,10 +270,10 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles() {
 
-    __shared__ short region_xmin = 0;
-    __shared__ short region_xmax = 0;
-    __shared__ short region_ymin = 0;
-    __shared__ short region_ymax = 0;
+    __shared__ short region_xmin;
+    __shared__ short region_xmax;
+    __shared__ short region_ymin;
+    __shared__ short region_ymax;
     __shared__ vector<Circle> circle_list;
    
     int block_x = blockIdx.x; 
