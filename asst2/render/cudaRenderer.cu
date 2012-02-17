@@ -17,8 +17,8 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define NUM_REGIONS_X 4
-#define NUM_REGIONS_Y 4
+#define NUM_REGIONS_X 36
+#define NUM_REGIONS_Y 36
 
 struct GlobalConstants {
 
@@ -375,6 +375,7 @@ __global__ void kernelRenderCircles() {
           //get the pointer
           float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * \
                                     (pixel_y * imageWidth + screenMinX)]);
+          imgPtr += pixel_x;
           float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f),  \ 
                                                invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
@@ -593,6 +594,7 @@ CudaRenderer::render() {
     // 256 threads per block is a healthy number
     dim3 blockDim(NUM_REGIONS_X, NUM_REGIONS_Y);
     dim3 gridDim( regionWidth, regionHeight );
+    //dim3 gridDim( 10, 10);
 
     //printf("launching kernels %dx%d blks %dx%d threads/blk", blockDim.x, gridDim);
     printf("image size %d x %d\n", image->width, image->height);
