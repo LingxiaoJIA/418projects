@@ -32,6 +32,8 @@ struct GlobalConstants {
 
     int imageWidth;
     int imageHeight;
+    int regionWidth;
+    int regionHeight;
     float* imageData;
 };
 
@@ -393,6 +395,9 @@ CudaRenderer::CudaRenderer() {
     color = NULL;
     radius = NULL;
 
+    regionWidth = 0;
+    regionHeight = 0;
+
     cudaDevicePosition = NULL;
     cudaDeviceVelocity = NULL;
     cudaDeviceColor = NULL;
@@ -493,6 +498,10 @@ CudaRenderer::setup() {
     params.numCircles = numCircles;
     params.imageWidth = image->width;
     params.imageHeight = image->height;
+    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
+    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
+    params.regionWidth = regionWidth;
+    params.regionHeight = regionHeight;
     params.position = cudaDevicePosition;
     params.velocity = cudaDeviceVelocity;
     params.color = cudaDeviceColor;
@@ -583,16 +592,12 @@ CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
     dim3 blockDim(NUM_REGIONS_X, NUM_REGIONS_Y);
-
-    unsigned int region_width = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
-    unsigned int region_height = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
-
-    dim3 gridDim( region_width, region_height );
+    dim3 gridDim( regionWidth, regionHeight );
 
     //printf("launching kernels %dx%d blks %dx%d threads/blk", blockDim.x, gridDim);
     printf("image size %d x %d\n", image->width, image->height);
     printf("launching kernels (%dx%d b @ %dx%d tpb)\n", blockDim.x, blockDim.y, gridDim.x, gridDim.y);
-    printf("block region side %d x %d\n", region_width, region_height);
+    printf("block region side %d x %d\n", regionWidth, regionHeight);
     
     kernelRenderCircles<<<blockDim, gridDim>>>();
     cudaThreadSynchronize();
