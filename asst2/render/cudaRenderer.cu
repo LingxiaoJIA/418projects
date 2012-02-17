@@ -17,9 +17,9 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define NUM_REGIONS_X 32
-#define NUM_REGIONS_Y 32
-#define CIRC_LIST_START_SIZE 8192
+#define NUM_REGIONS_X 64
+#define NUM_REGIONS_Y 64
+#define CIRC_LIST_START_SIZE 32
 
 struct GlobalConstants {
 
@@ -276,16 +276,28 @@ __global__ void kernelRenderCircles() {
 //    if(!(blockIdx.x == 16 && blockIdx.y == 16))
 //        return;
 
-    __shared__ short region_xmin;
-    __shared__ short region_xmax;
-    __shared__ short region_ymin;
-    __shared__ short region_ymax;
+    short region_xmin;
+    short region_xmax;
+    short region_ymin;
+    short region_ymax;
 
-    __shared__ int* circle_list;
-    __shared__ int circle_count;
+    int threadIndex = threadIdx.y * cuConstRendererParams.regionWidth + threadIdx.x;
+    int numThreads = cuConstRendererParams.regionWidth * cuConstRendererParams.regionHeight;
 
-    __shared__  short imageWidth;
-    __shared__  short imageHeight;
+    __shared__ int** circle_lists;
+    __shared__ int* circle_list_counts;
+    if(threadIndex == 0) {
+        circle_lists = (int**) malloc(sizeof(int*) * numThreads);
+        if(circle_lists == NULL)
+            printf("malloc failed\n");
+        circle_list_counts = (int*) malloc(sizeof(int) * numThreads);
+        if(circle_list_counts == NULL)
+            printf("malloc failed\n");
+    }
+    __syncthreads();
+    
+    short imageWidth;
+    short imageHeight;
    
     int region_x = blockIdx.x; 
     int region_y = blockIdx.y;
@@ -293,34 +305,32 @@ __global__ void kernelRenderCircles() {
     /*************************************************
      * Phase 1
      *************************************************/
+    imageWidth = cuConstRendererParams.imageWidth;
+    imageHeight = cuConstRendererParams.imageHeight;
+    //compute bounding box of region
+    region_xmin = cuConstRendererParams.regionWidth * region_x;
+    region_xmax = cuConstRendererParams.regionWidth * (region_x + 1) - 1;
+    region_ymin = cuConstRendererParams.regionHeight * region_y;
+    region_ymax = cuConstRendererParams.regionHeight * (region_y + 1) - 1;
+    //account for boxes possibly pushed out of bounds by rounding
+    region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
+    region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
 
-    if (threadIdx.x == 0 && threadIdx.y == 0) {
+    int numCircles = cuConstRendererParams.numCircles;
+    int circlesPerThread = numCircles / numThreads;
+    int circStart = threadIndex * circlesPerThread;
+    int circEnd = circStart + circlesPerThread - 1;
+    if(threadIndex == numThreads - 1)
+        circEnd = numCircles - 1;
 
-      imageWidth = cuConstRendererParams.imageWidth;
-      imageHeight = cuConstRendererParams.imageHeight;
-      //compute bounding box of region
-      region_xmin = cuConstRendererParams.regionWidth * region_x;
-      region_xmax = cuConstRendererParams.regionWidth * (region_x + 1) - 1;
-      region_ymin = cuConstRendererParams.regionHeight * region_y;
-      region_ymax = cuConstRendererParams.regionHeight * (region_y + 1) - 1;
-      //account for boxes possibly pushed out of bounds by rounding
-      region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
-      region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
-      //printf("I am master thread for block %dx%d and my box is x:%d-%d y:%d-%d\n", blockIdx.x, blockIdx.y, region_xmin, region_xmax, region_ymin, region_ymax);
-
-      //check circles
-      int numCircles = cuConstRendererParams.numCircles;
-
-      // malloc circle_list in device heap memory
-      circle_count = 0;
-      int circle_list_size = (CIRC_LIST_START_SIZE > numCircles)? numCircles: CIRC_LIST_START_SIZE;
-      //circle_list = (int*) malloc(sizeof(int) * numCircles);
-      circle_list = (int*) malloc(sizeof(int) * circle_list_size);
-      if(circle_list == NULL) {
+    // malloc circle_list in device heap memory
+    circle_list_counts[threadIndex] = 0;
+    int circle_list_size = (CIRC_LIST_START_SIZE > circlesPerThread)? circlesPerThread: CIRC_LIST_START_SIZE;
+    circle_lists[threadIndex] = (int*) malloc(sizeof(int) * circle_list_size);
+    if(circle_lists[threadIndex] == NULL)
         printf("Malloc failed");
-      }
-      
-      for(int i = 0; i < numCircles; i++) {
+
+    for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
 
           // read position and radius
@@ -342,32 +352,31 @@ __global__ void kernelRenderCircles() {
 
          if (!((screenMinX > region_xmax) || (screenMaxX < region_xmin) || (screenMinY > region_ymax) || (screenMaxY < region_ymin))) {
            
-           //add to the list of circles intersecting this region
-           if(circle_count == circle_list_size) {
+           //add to this threads list of circles 
+           if(circle_list_counts[threadIndex] == circle_list_size) {
               int* new_circle_list = (int*) malloc(2 * sizeof(int) * circle_list_size);
               if(new_circle_list == NULL) {
                 printf("Malloc failed");
               }
               for(int j=0; j < circle_list_size; j++) {
-                new_circle_list[j] = circle_list[j];
+                new_circle_list[j] = circle_lists[threadIndex][j];
               }
-              free(circle_list);
-              circle_list = new_circle_list;
+              free(circle_lists[threadIndex]);
+              circle_lists[threadIndex] = new_circle_list;
               circle_list_size *= 2;
-              printf("I am master thread for block %dx%d and i am doubling circle list size to %d\n", blockIdx.x, blockIdx.y, circle_list_size);
            }
-           circle_list[circle_count++] = i;
+           circle_lists[threadIndex][circle_list_counts[threadIndex]] = i;
+           circle_list_counts[threadIndex] += 1;
          }
       }
-      if(circle_count > 0)
-        printf("I am master thread for block %dx%d and i found %d circles\n", blockIdx.x, blockIdx.y, circle_count);
-    } 
+      if(blockIdx.x == 0 && blockIdx.y == 63)
+         printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
 
-    __syncthreads();
 
     /*************************************************
      * Phase 2
      *************************************************/
+    __syncthreads();
     //calculate my pixel coordinates
     int pixel_x = region_xmin + threadIdx.x;
     int pixel_y = region_ymin + threadIdx.y;
@@ -382,40 +391,45 @@ __global__ void kernelRenderCircles() {
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    for(int i = 0; i < circle_count; i++) {
-      ci = circle_list[i];
-      int index3 = 3 * ci;
+    for(int c = 0; c < numThreads; c++) {
 
-      // read position and radius
-      float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-      float  rad = cuConstRendererParams.radius[ci];
+        for(int i = 0; i < circle_list_counts[c]; i++) {
+            ci = circle_lists[c][i];
+            int index3 = 3 * ci;
 
-      // compute the bounding box of the circle. The bound is in integer
-      // screen coordinates, so it's clamped to the edges of the screen.
-      short minX = static_cast<short>(imageWidth * (p.x - rad));
-      short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
-      short minY = static_cast<short>(imageHeight * (p.y - rad));
-      short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
+            // read position and radius
+            float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+            float  rad = cuConstRendererParams.radius[ci];
+
+            // compute the bounding box of the circle. The bound is in integer
+            // screen coordinates, so it's clamped to the edges of the screen.
+            short minX = static_cast<short>(imageWidth * (p.x - rad));
+            short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
+            short minY = static_cast<short>(imageHeight * (p.y - rad));
+            short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
       
-      // a bunch of clamps.  Is there a CUDA built-in for this?
-      short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth - 1) : 0;
-      short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth - 1) : 0;
-      short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight - 1) : 0;
-      short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight - 1) : 0;
+            // a bunch of clamps.  Is there a CUDA built-in for this?
+            short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth - 1) : 0;
+            short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth - 1) : 0;
+            short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight - 1) : 0;
+            short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight - 1) : 0;
 
-      if (pixel_x >= screenMinX && pixel_x <= screenMaxX && pixel_y >= screenMinY && pixel_y <= screenMaxY) {
-          //get the pointer
-          float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * \
-                                    (pixel_y * imageWidth + pixel_x)]);
-          float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
+            if (pixel_x >= screenMinX && pixel_x <= screenMaxX && pixel_y >= screenMinY && pixel_y <= screenMaxY) {
+                //get the pointer
+                float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * imageWidth + pixel_x)]);
+                float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
-          shadePixel(ci, pixelCenterNorm, p, imgPtr);
-      }
+                shadePixel(ci, pixelCenterNorm, p, imgPtr);
+            }
+        }
     }
-  
+
     __syncthreads();
-    if (threadIdx.x == 0 && threadIdx.y == 0) {
-        free(circle_list);
+    free(circle_lists[threadIndex]);
+    __syncthreads();
+    if (threadIndex == 0) {
+        free(circle_lists);
+        free(circle_list_counts);
     }
 }
 
@@ -516,6 +530,9 @@ CudaRenderer::setup() {
     cudaMalloc(&cudaDeviceRadius, sizeof(float) * numCircles);
     cudaMalloc(&cudaDeviceImageData, sizeof(float) * 4 * image->width * image->height);
 
+    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
+    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
+
     cudaMemcpy(cudaDevicePosition, position, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
     cudaMemcpy(cudaDeviceVelocity, velocity, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
     cudaMemcpy(cudaDeviceColor, color, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
@@ -534,8 +551,6 @@ CudaRenderer::setup() {
     params.numCircles = numCircles;
     params.imageWidth = image->width;
     params.imageHeight = image->height;
-    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
-    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
     params.regionWidth = regionWidth;
     params.regionHeight = regionHeight;
     params.position = cudaDevicePosition;
