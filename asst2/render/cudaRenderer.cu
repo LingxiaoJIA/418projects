@@ -272,6 +272,9 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles() {
 
+//    if(!(blockIdx.x == 16 && blockIdx.y == 16))
+//        return;
+
     __shared__ short region_xmin;
     __shared__ short region_xmax;
     __shared__ short region_ymin;
@@ -337,8 +340,8 @@ __global__ void kernelRenderCircles() {
     __syncthreads();
 
     //calculate my pixel coordinates
-    int pixel_x = blockIdx.x * blockDim.x + threadIdx.x;
-    int pixel_y = blockIdx.y * blockDim.y + threadIdx.y;
+    int pixel_x = region_xmin + threadIdx.x;
+    int pixel_y = region_ymin + threadIdx.y;
 
     //check that we're on screen - use region since's its already clamped
     if (!(pixel_x < imageWidth && pixel_y < imageHeight)) {
@@ -374,13 +377,17 @@ __global__ void kernelRenderCircles() {
       if (pixel_x >= screenMinX && pixel_x <= screenMaxX && pixel_y >= screenMinY && pixel_y <= screenMaxY) {
           //get the pointer
           float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * \
-                                    (pixel_y * imageWidth + screenMinX)]);
-          imgPtr += pixel_x;
+                                    (pixel_y * imageWidth + pixel_x)]);
           float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f),  \ 
                                                invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
           shadePixel(ci, pixelCenterNorm, p, imgPtr);
       }
+    }
+
+    __syncthreads();
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        free(circle_list);
     }
 }
 
