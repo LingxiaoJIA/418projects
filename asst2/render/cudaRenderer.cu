@@ -32,6 +32,16 @@ struct GlobalConstants {
     float* imageData;
 };
 
+typedef struct struct_Circle {
+    int index;
+    float3 pos;
+    float rad;
+    short xmin;
+    short xmax;
+    short ymin;
+    short ymax;
+} Circle;
+
 // Global variable that is in scope, but read-only, for all cuda
 // kernels.  The __constant__ modifier designates this variable will
 // be stored in special "constant" memory on the GPU. (we didn't talk
@@ -257,6 +267,75 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles() {
 
+    __shared__ short region_xmin = 0;
+    __shared__ short region_xmax = 0;
+    __shared__ short region_ymin = 0;
+    __shared__ short region_ymax = 0;
+    __shared__ vector<Circle> circle_list;
+   
+    int block_x = blockIdx.x; 
+    int block_y = blockIdx.y;
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+      short imageWidth = cuConstRendererParams.imageWidth;
+      short imageHeight = cuConstRendererParams.imageHeight;
+      //compute bounding box of region
+      region_xmin = cuConstRendererParams.regionWidth * block_x;
+      region_xmax = cuConstRendererParams.regionWidth * (block_x + 1) - 1;
+      region_ymin = cuConstRendererParams.regionHeight * block_y;
+      region_ymax = cuConstRendererParams.regionHeight * (block_y + 1) - 1;
+      //account for boxes possibly pushed out of bounds by rounding
+      region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth;
+      region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight;
+
+      //check circles
+      int numCircles = cuConstRendererParams.numCircles;
+      
+      for(int i = 0; i < numCircles; i++) {
+          int index3 = 3 * i;
+
+          // read position and radius
+          float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+          float  rad = cuConstRendererParams.radius[index];
+
+          // compute the bounding box of the circle. The bound is in integer
+          // screen coordinates, so it's clamped to the edges of the screen.
+          short minX = static_cast<short>(imageWidth * (p.x - rad));
+          short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
+          short minY = static_cast<short>(imageHeight * (p.y - rad));
+          short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
+
+         // a bunch of clamps.  Is there a CUDA built-in for this?
+         short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+         short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
+         short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
+         short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
+
+         if (!((screenMinX > region_xmax) || (screenMaxX < region_xmin) || \
+               (screenMinY > region_ymax) || (screenMaxY < region_ymin))) {
+           //add to the list of circles intersecting this region
+           Circle c;
+           c.index = i;
+           c.p = p;
+           c.rad = rad;
+           c.xmin = screenMinX;
+           c.xmax = screenMaxX;
+           c.ymin = screenMiny;
+           c.ymax = screenMaxy;
+           circle_list.push_back(c);
+         }
+    } 
+
+    __syncthreads();
+
+    int pixel_x = 0;
+    int pixel_y = 0;
+    /*
+    for( circle in circlelist) :
+      if in bounding box
+         shadepixel
+    */
+    /*
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (index >= cuConstRendererParams.numCircles)
@@ -296,6 +375,7 @@ __global__ void kernelRenderCircles() {
             imgPtr++;
         }
     }
+    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
