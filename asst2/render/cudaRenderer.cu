@@ -17,6 +17,9 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
+#define NUM_REGIONS_X 5
+#define NUM_REGIONS_Y 4
+
 struct GlobalConstants {
 
     SceneName sceneName;
@@ -499,12 +502,17 @@ void
 CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
-    dim3 blockDim(256, 1);
+    dim3 blockDim(NUM_REGIONS_X, NUM_REGIONS_Y);
 
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+    unsigned int region_width = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
+    unsigned int region_height = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
 
-    //printf("launching kernels %d blk %d thread/blk", blockDim.x, gridDim);
-    printf("launching kernels (%db x %dt)\n", blockDim.x, gridDim.x);
+    dim3 gridDim( region_width, region_height );
+
+    //printf("launching kernels %dx%d blks %dx%d threads/blk", blockDim.x, gridDim);
+    printf("image size %d x %d\n", image->width, image->height);
+    printf("launching kernels (%dx%d b @ %dx%d tpb)\n", blockDim.x, blockDim.y, gridDim.x, gridDim.y);
+    printf("block region side %d x %d\n", region_width, region_height);
     
     kernelRenderCircles<<<blockDim, gridDim>>>();
     cudaThreadSynchronize();
