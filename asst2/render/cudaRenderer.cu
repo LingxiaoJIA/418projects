@@ -17,7 +17,7 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define NUM_REGIONS_X 5
+#define NUM_REGIONS_X 4
 #define NUM_REGIONS_Y 4
 
 struct GlobalConstants {
@@ -276,7 +276,10 @@ __global__ void kernelRenderCircles() {
     __shared__ short region_xmax;
     __shared__ short region_ymin;
     __shared__ short region_ymax;
-    __shared__ std::vector<Circle> circle_list;
+
+    __shared__ short* circle_list;
+    __shared__ short circle_count;
+
     __shared__  short imageWidth;
     __shared__  short imageHeight;
    
@@ -284,6 +287,7 @@ __global__ void kernelRenderCircles() {
     int region_y = blockIdx.y;
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
+
       imageWidth = cuConstRendererParams.imageWidth;
       imageHeight = cuConstRendererParams.imageHeight;
       //compute bounding box of region
@@ -297,6 +301,10 @@ __global__ void kernelRenderCircles() {
 
       //check circles
       int numCircles = cuConstRendererParams.numCircles;
+
+      // malloc circle_list in device heap memory
+      circle_count = 0;
+      circle_list = (short*) malloc(sizeof(short) * numCircles);
       
       for(int i = 0; i < numCircles; i++) {
           int index3 = 3 * i;
@@ -321,15 +329,7 @@ __global__ void kernelRenderCircles() {
          if (!((screenMinX > region_xmax) || (screenMaxX < region_xmin) || \
                (screenMinY > region_ymax) || (screenMaxY < region_ymin))) {
            //add to the list of circles intersecting this region
-           Circle c;
-           c.index = i;
-           c.pos = p;
-           c.rad = rad;
-           c.xmin = screenMinX;
-           c.xmax = screenMaxX;
-           c.ymin = screenMinY;
-           c.ymax = screenMaxY;
-           circle_list.push_back(c);
+           circle_list[circle_count++] = i;
          }
       }
     } 
@@ -346,20 +346,39 @@ __global__ void kernelRenderCircles() {
       return;
     }
 
-    Circle c;
+    short ci;
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    for(int i = 0; i < circle_list.size(); i++) {
-      c = circle_list[i];
-      if (pixel_x >= c.xmin && pixel_x <= c.xmax && pixel_y >= c.ymin && pixel_y <= c.ymax) {
+    for(int i = 0; i < circle_count; i++) {
+      ci = circle_list[i];
+      int index3 = 3 * ci;
+
+      // read position and radius
+      float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+      float  rad = cuConstRendererParams.radius[ci];
+
+      // compute the bounding box of the circle. The bound is in integer
+      // screen coordinates, so it's clamped to the edges of the screen.
+      short minX = static_cast<short>(imageWidth * (p.x - rad));
+      short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
+      short minY = static_cast<short>(imageHeight * (p.y - rad));
+      short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
+      
+      // a bunch of clamps.  Is there a CUDA built-in for this?
+      short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth - 1) : 0;
+      short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth - 1) : 0;
+      short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight - 1) : 0;
+      short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight - 1) : 0;
+
+      if (pixel_x >= screenMinX && pixel_x <= screenMaxX && pixel_y >= screenMinY && pixel_y <= screenMaxY) {
           //get the pointer
           float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * \
-                                    (pixel_y * imageWidth + c.xmin)]);
+                                    (pixel_y * imageWidth + screenMinX)]);
           float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f),  \ 
                                                invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
-          shadePixel(c.index, pixelCenterNorm, c.pos, imgPtr);
+          shadePixel(ci, pixelCenterNorm, p, imgPtr);
       }
     }
 }
