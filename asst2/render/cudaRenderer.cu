@@ -500,8 +500,12 @@ CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
     dim3 blockDim(256, 1);
+
     dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
 
+    //printf("launching kernels %d blk %d thread/blk", blockDim.x, gridDim);
+    printf("launching kernels (%db x %dt)\n", blockDim.x, gridDim.x);
+    
     kernelRenderCircles<<<blockDim, gridDim>>>();
     cudaThreadSynchronize();
 }
