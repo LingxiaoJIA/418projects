@@ -258,6 +258,29 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
     // END SHOULD-BE-ATOMIC REGION
 }
 
+__device__ __inline__ int
+circleInBox(
+    float circleX, float circleY, float circleRadius,
+    float boxL, float boxR, float boxT, float boxB)
+{
+
+    // clamp circle center to box (finds the closest point on the box)
+    float closestX = (circleX > boxL) ? ((circleX < boxR) ? circleX : boxR) : boxL;
+    float closestY = (circleY > boxB) ? ((circleY < boxT) ? circleY : boxT) : boxB;
+
+    // is circle radius less than the distance to the closest point on
+    // the box?
+    float distX = closestX - circleX;
+    float distY = closestY - circleY;
+
+    if ( ((distX*distX) + (distY*distY)) <= (circleRadius*circleRadius) ) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+
 // kernelRenderCircles -- (CUDA device code)
 //
 // Each thread renders a circle.  Since there is no protection to
@@ -267,11 +290,6 @@ __global__ void kernelRenderCircles() {
 
 //    if(!(blockIdx.x == 16 && blockIdx.y == 16))
 //        return;
-
-    short region_xmin;
-    short region_xmax;
-    short region_ymin;
-    short region_ymax;
 
     int threadIndex = threadIdx.y * TPB_X + threadIdx.x;
 
@@ -287,26 +305,34 @@ __global__ void kernelRenderCircles() {
     }
     __syncthreads();
     
-    short imageWidth;
-    short imageHeight;
-   
     int region_x = blockIdx.x; 
     int region_y = blockIdx.y;
+
+    short imageWidth = cuConstRendererParams.imageWidth;
+    short imageHeight = cuConstRendererParams.imageHeight;
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+
+    //compute bounding box of region
+    short region_xmin = TPB_X * region_x;
+    short region_xmax = TPB_X * (region_x + 1) - 1;
+    short region_ymin = TPB_Y * region_y;
+    short region_ymax = TPB_Y * (region_y + 1) - 1;
+
+    //account for boxes possibly pushed out of bounds by rounding
+    region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
+    region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
+
+    // convert to normalized float coords
+    float boxL = invWidth * region_xmin;
+    float boxR = invWidth * region_xmax;
+    float boxB = invHeight * region_ymin;
+    float boxT = invHeight * region_ymax;
 
     /*************************************************
      * Phase 1
      *   build circle-list for each region
      *************************************************/
-    imageWidth = cuConstRendererParams.imageWidth;
-    imageHeight = cuConstRendererParams.imageHeight;
-    //compute bounding box of region
-    region_xmin = TPB_X * region_x;
-    region_xmax = TPB_X * (region_x + 1) - 1;
-    region_ymin = TPB_Y * region_y;
-    region_ymax = TPB_Y * (region_y + 1) - 1;
-    //account for boxes possibly pushed out of bounds by rounding
-    region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
-    region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
 
     int numCircles = cuConstRendererParams.numCircles;
     int circlesPerThread = numCircles / TPB;
@@ -322,6 +348,8 @@ __global__ void kernelRenderCircles() {
     if(circle_lists[threadIndex] == NULL)
         printf("Malloc failed");
 
+    //float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
+    
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
 
@@ -329,21 +357,8 @@ __global__ void kernelRenderCircles() {
           float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
           float  rad = cuConstRendererParams.radius[i];
 
-          // compute the bounding box of the circle. The bound is in integer
-          // screen coordinates, so it's clamped to the edges of the screen.
-          short minX = static_cast<short>(imageWidth * (p.x - rad));
-          short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
-          short minY = static_cast<short>(imageHeight * (p.y - rad));
-          short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
+          if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
 
-         // a bunch of clamps.  Is there a CUDA built-in for this?
-         short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth - 1) : 0;
-         short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth - 1) : 0;
-         short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight - 1) : 0;
-         short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight - 1) : 0;
-
-         if (!((screenMinX > region_xmax) || (screenMaxX < region_xmin) || (screenMinY > region_ymax) || (screenMaxY < region_ymin))) {
-           
            //add to this threads list of circles 
            if(circle_list_counts[threadIndex] == circle_list_size) {
               int* new_circle_list = (int*) malloc(2 * sizeof(int) * circle_list_size);
@@ -380,8 +395,6 @@ __global__ void kernelRenderCircles() {
     }
 
     int ci;
-    float invWidth = 1.f / imageWidth;
-    float invHeight = 1.f / imageHeight;
 
     for(int c = 0; c < TPB; c++) {
 
