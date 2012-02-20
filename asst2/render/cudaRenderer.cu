@@ -17,8 +17,10 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define NUM_REGIONS_X 64
-#define NUM_REGIONS_Y 64
+#define TPB_X 16
+#define TPB_Y 16
+#define TPB (TPB_X * TPB_Y)
+
 #define CIRC_LIST_START_SIZE 32
 
 struct GlobalConstants {
@@ -33,20 +35,10 @@ struct GlobalConstants {
 
     int imageWidth;
     int imageHeight;
-    int regionWidth;
-    int regionHeight;
+    int numXRegions;
+    int numYRegions;
     float* imageData;
 };
-
-typedef struct struct_Circle {
-    int index;
-    float3 pos;
-    float rad;
-    short xmin;
-    short xmax;
-    short ymin;
-    short ymax;
-} Circle;
 
 // Global variable that is in scope, but read-only, for all cuda
 // kernels.  The __constant__ modifier designates this variable will
@@ -281,16 +273,15 @@ __global__ void kernelRenderCircles() {
     short region_ymin;
     short region_ymax;
 
-    int threadIndex = threadIdx.y * cuConstRendererParams.regionWidth + threadIdx.x;
-    int numThreads = cuConstRendererParams.regionWidth * cuConstRendererParams.regionHeight;
+    int threadIndex = threadIdx.y * TPB_X + threadIdx.x;
 
     __shared__ int** circle_lists;
     __shared__ int* circle_list_counts;
     if(threadIndex == 0) {
-        circle_lists = (int**) malloc(sizeof(int*) * numThreads);
+        circle_lists = (int**) malloc(sizeof(int*) * TPB);
         if(circle_lists == NULL)
             printf("malloc failed\n");
-        circle_list_counts = (int*) malloc(sizeof(int) * numThreads);
+        circle_list_counts = (int*) malloc(sizeof(int) * TPB);
         if(circle_list_counts == NULL)
             printf("malloc failed\n");
     }
@@ -309,19 +300,19 @@ __global__ void kernelRenderCircles() {
     imageWidth = cuConstRendererParams.imageWidth;
     imageHeight = cuConstRendererParams.imageHeight;
     //compute bounding box of region
-    region_xmin = cuConstRendererParams.regionWidth * region_x;
-    region_xmax = cuConstRendererParams.regionWidth * (region_x + 1) - 1;
-    region_ymin = cuConstRendererParams.regionHeight * region_y;
-    region_ymax = cuConstRendererParams.regionHeight * (region_y + 1) - 1;
+    region_xmin = TPB_X * region_x;
+    region_xmax = TPB_X * (region_x + 1) - 1;
+    region_ymin = TPB_Y * region_y;
+    region_ymax = TPB_Y * (region_y + 1) - 1;
     //account for boxes possibly pushed out of bounds by rounding
     region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
     region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
 
     int numCircles = cuConstRendererParams.numCircles;
-    int circlesPerThread = numCircles / numThreads;
+    int circlesPerThread = numCircles / TPB;
     int circStart = threadIndex * circlesPerThread;
     int circEnd = circStart + circlesPerThread - 1;
-    if(threadIndex == numThreads - 1)
+    if(threadIndex == TPB - 1)
         circEnd = numCircles - 1;
 
     // malloc circle_list in device heap memory
@@ -392,7 +383,7 @@ __global__ void kernelRenderCircles() {
     float invWidth = 1.f / imageWidth;
     float invHeight = 1.f / imageHeight;
 
-    for(int c = 0; c < numThreads; c++) {
+    for(int c = 0; c < TPB; c++) {
 
         for(int i = 0; i < circle_list_counts[c]; i++) {
             ci = circle_lists[c][i];
@@ -430,8 +421,8 @@ CudaRenderer::CudaRenderer() {
     color = NULL;
     radius = NULL;
 
-    regionWidth = 0;
-    regionHeight = 0;
+    numXRegions = 0;
+    numYRegions = 0;
 
     cudaDevicePosition = NULL;
     cudaDeviceVelocity = NULL;
@@ -527,16 +518,16 @@ CudaRenderer::setup() {
     // for optimizing access to constant memory.  Using global memory
     // here would have worked just as well.  See the Programmer's
     // Guide for more information about constant memory.
-    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
-    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
+    numXRegions = ((image->width-1) / TPB_X) + 1;   // rounding up
+    numYRegions = ((image->height-1) / TPB_Y) + 1; // rounding up
 
     GlobalConstants params;
     params.sceneName = sceneName;
     params.numCircles = numCircles;
     params.imageWidth = image->width;
     params.imageHeight = image->height;
-    params.regionWidth = regionWidth;
-    params.regionHeight = regionHeight;
+    params.numXRegions = numXRegions;
+    params.numYRegions = numYRegions;
     params.position = cudaDevicePosition;
     params.velocity = cudaDeviceVelocity;
     params.color = cudaDeviceColor;
@@ -625,14 +616,12 @@ CudaRenderer::advanceAnimation() {
 void
 CudaRenderer::render() {
     // 256 threads per block is a healthy number
-    dim3 blockDim(NUM_REGIONS_X, NUM_REGIONS_Y);
-    dim3 gridDim( regionWidth, regionHeight );
-    //dim3 gridDim( 10, 10);
+    dim3 blockDim(numXRegions, numYRegions);
+    dim3 gridDim( TPB_X, TPB_Y );
 
     //printf("launching kernels %dx%d blks %dx%d threads/blk", blockDim.x, gridDim);
     printf("image size %d x %d\n", image->width, image->height);
     printf("launching kernels (%dx%d b @ %dx%d tpb)\n", blockDim.x, blockDim.y, gridDim.x, gridDim.y);
-    printf("block region size %d x %d\n", regionWidth, regionHeight);
     printf("num circles: %d\n", numCircles);
     
     kernelRenderCircles<<<blockDim, gridDim>>>();
