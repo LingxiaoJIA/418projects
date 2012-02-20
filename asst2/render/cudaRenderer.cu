@@ -304,6 +304,7 @@ __global__ void kernelRenderCircles() {
 
     /*************************************************
      * Phase 1
+     *   build circle-list for each region
      *************************************************/
     imageWidth = cuConstRendererParams.imageWidth;
     imageHeight = cuConstRendererParams.imageHeight;
@@ -374,6 +375,7 @@ __global__ void kernelRenderCircles() {
 
     /*************************************************
      * Phase 2
+     *    render each pixel in this region based off circle-list
      *************************************************/
     __syncthreads();
     //calculate my pixel coordinates
@@ -398,28 +400,12 @@ __global__ void kernelRenderCircles() {
 
             // read position and radius
             float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-            float  rad = cuConstRendererParams.radius[ci];
 
-            // compute the bounding box of the circle. The bound is in integer
-            // screen coordinates, so it's clamped to the edges of the screen.
-            short minX = static_cast<short>(imageWidth * (p.x - rad));
-            short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
-            short minY = static_cast<short>(imageHeight * (p.y - rad));
-            short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
-      
-            // a bunch of clamps.  Is there a CUDA built-in for this?
-            short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth - 1) : 0;
-            short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth - 1) : 0;
-            short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight - 1) : 0;
-            short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight - 1) : 0;
+            //get the pointer
+            float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * imageWidth + pixel_x)]);
+            float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
-            if (pixel_x >= screenMinX && pixel_x <= screenMaxX && pixel_y >= screenMinY && pixel_y <= screenMaxY) {
-                //get the pointer
-                float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * imageWidth + pixel_x)]);
-                float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
-
-                shadePixel(ci, pixelCenterNorm, p, imgPtr);
-            }
+            shadePixel(ci, pixelCenterNorm, p, imgPtr);
         }
     }
 
