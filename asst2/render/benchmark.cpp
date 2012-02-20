@@ -22,7 +22,7 @@ startBenchmark(
 
     bool dumpFrames = frameFilename.length() > 0;
 
-    printf("\nRunning %d frame benchmark, beginning at frame %d...\n", totalFrames, startFrame);
+    printf("\nRunning benchmark, %d frames, beginning at frame %d ...\n", totalFrames, startFrame);
     if (dumpFrames)
         printf("Dumping frames to %s_xxx.ppm\n", frameFilename.c_str());
 
@@ -50,6 +50,7 @@ startBenchmark(
                 char filename[1024];
                 sprintf(filename, "%s_%04d.ppm", frameFilename.c_str(), frame);
                 writePPMImage(renderer->getImage(), filename);
+                //renderer->dumpParticles("snow.par");
             }
 
             double endFileSaveTime = CycleTimer::currentSeconds();
@@ -67,6 +68,7 @@ startBenchmark(
     printf("Clear:    %.4f ms\n", 1000.f * totalClearTime / totalFrames);
     printf("Advance:  %.4f ms\n", 1000.f * totalAdvanceTime / totalFrames);
     printf("Render:   %.4f ms\n", 1000.f * totalRenderTime / totalFrames);
+    printf("Total:    %.4f ms\n", 1000.f * (totalClearTime + totalAdvanceTime + totalRenderTime) / totalFrames);
     if (dumpFrames)
         printf("File IO:  %.4f ms\n", 1000.f * totalFileSaveTime / totalFrames);
     printf("\n");

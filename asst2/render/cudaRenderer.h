@@ -16,7 +16,7 @@ private:
     float* velocity;
     float* color;
     float* radius;
-
+    
     int regionWidth;
     int regionHeight;
 

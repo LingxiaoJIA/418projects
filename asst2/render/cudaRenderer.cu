@@ -229,7 +229,7 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
     // would be wise to perform this logic outside of the loop next in
     // kernelRenderCircles.  (If feeling good about yourself, you
     // could use some specialized template magic).
-    if (cuConstRendererParams.sceneName == SNOWFLAKES) {
+    if (cuConstRendererParams.sceneName == SNOWFLAKES || cuConstRendererParams.sceneName == SNOWFLAKES_SINGLE_FRAME) {
 
         const float kCircleMaxAlpha = .5f;
         const float falloffScale = 4.f;
@@ -268,8 +268,8 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 
 // kernelRenderCircles -- (CUDA device code)
 //
-// Each thread renders a circle.  Since there is no protection ensures
-// order of update or mutual exclusion on the output image, the
+// Each thread renders a circle.  Since there is no protection to
+// ensure order of update or mutual exclusion on the output image, the
 // resulting image will be incorrect.
 __global__ void kernelRenderCircles() {
 
@@ -369,9 +369,8 @@ __global__ void kernelRenderCircles() {
            circle_list_counts[threadIndex] += 1;
          }
       }
-      if(blockIdx.x == 0 && blockIdx.y == 63)
-         printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
-
+      //if(blockIdx.x == 0 && blockIdx.y == 63)
+        // printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
 
     /*************************************************
      * Phase 2
@@ -530,9 +529,6 @@ CudaRenderer::setup() {
     cudaMalloc(&cudaDeviceRadius, sizeof(float) * numCircles);
     cudaMalloc(&cudaDeviceImageData, sizeof(float) * 4 * image->width * image->height);
 
-    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
-    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
-
     cudaMemcpy(cudaDevicePosition, position, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
     cudaMemcpy(cudaDeviceVelocity, velocity, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
     cudaMemcpy(cudaDeviceColor, color, sizeof(float) * 3 * numCircles, cudaMemcpyHostToDevice);
@@ -545,6 +541,8 @@ CudaRenderer::setup() {
     // for optimizing access to constant memory.  Using global memory
     // here would have worked just as well.  See the Programmer's
     // Guide for more information about constant memory.
+    regionWidth = ((image->width-1) / NUM_REGIONS_X) + 1;   // rounding up
+    regionHeight = ((image->height-1) / NUM_REGIONS_Y) + 1; // rounding up
 
     GlobalConstants params;
     params.sceneName = sceneName;
@@ -611,7 +609,7 @@ CudaRenderer::clearImage() {
         (image->width + blockDim.x - 1) / blockDim.x,
         (image->height + blockDim.y - 1) / blockDim.y);
 
-    if (sceneName == SNOWFLAKES) {
+    if (sceneName == SNOWFLAKES || sceneName == SNOWFLAKES_SINGLE_FRAME) {
         kernelClearImageSnowflake<<<gridDim, blockDim>>>();
     } else {
         kernelClearImage<<<gridDim, blockDim>>>(1.f, 1.f, 1.f, 1.f);
@@ -640,7 +638,6 @@ CudaRenderer::advanceAnimation() {
 
 void
 CudaRenderer::render() {
-
     // 256 threads per block is a healthy number
     dim3 blockDim(NUM_REGIONS_X, NUM_REGIONS_Y);
     dim3 gridDim( regionWidth, regionHeight );

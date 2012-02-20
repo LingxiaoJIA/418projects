@@ -6,8 +6,12 @@ struct Image;
 
 typedef enum {
     CIRCLE_RGB,
-    CIRCLE_TEST,
-    SNOWFLAKES
+    CIRCLE_RGBY,
+    CIRCLE_TEST_10K,
+    CIRCLE_TEST_100K,
+    PATTERN,
+    SNOWFLAKES,
+    SNOWFLAKES_SINGLE_FRAME
 } SceneName;
 
 
@@ -30,6 +34,8 @@ public:
     virtual void advanceAnimation() = 0;
 
     virtual void render() = 0;
+
+    //virtual void dumpParticles(const char* filename) {}
 
 };
 

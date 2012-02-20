@@ -66,7 +66,7 @@ RefRenderer::clearImage() {
     // clear image to white unless this is the snowflake scene.  For
     // the snowflake clear the image to a more pleasing color ramp
 
-    if (sceneName == SNOWFLAKES) {
+    if (sceneName == SNOWFLAKES || sceneName == SNOWFLAKES_SINGLE_FRAME) {
 
         for (int j=0; j<image->height; j++) {
             float* ptr = image->data + (4 * j * image->width);
@@ -214,7 +214,7 @@ RefRenderer::shadePixel(
     float alpha;
 
     // there is a non-zero contribution.  Now compute the shading
-    if (sceneName == SNOWFLAKES) {
+    if (sceneName == SNOWFLAKES || sceneName == SNOWFLAKES_SINGLE_FRAME) {
 
         // Snowflake opacity falls off with distance from center.
         // Snowflake color is determined by distance from center and
@@ -317,4 +317,19 @@ RefRenderer::render() {
             }
         }
     }
+}
+
+void RefRenderer::dumpParticles(const char* filename) {
+
+    FILE* output = fopen(filename, "w");
+
+    fprintf(output, "%d\n", numCircles);
+    for (int i=0; i<numCircles; i++) {
+        fprintf(output, "%f %f %f   %f %f %f   %f\n",
+                position[3*i+0], position[3*i+1], position[3*i+2],
+                velocity[3*i+0], velocity[3*i+1], velocity[3*i+2],
+                radius[i]);
+    }
+    fclose(output);
+
 }

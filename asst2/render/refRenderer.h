@@ -36,6 +36,8 @@ public:
 
     void render();
 
+    void dumpParticles(const char* filename);
+
     void shadePixel(
         int circleIndex,
         float pixelCenterX, float pixelCenterY,

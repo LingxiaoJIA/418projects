@@ -14,6 +14,7 @@ void startBenchmark(CircleRenderer* renderer, int startFrame, int totalFrames, c
 
 void usage(const char* progname) {
     printf("Usage: %s [options] scenename\n", progname);
+    printf("Valid scenenames are: rgb, rgby, rand10k, rand100k, pattern, snow, snowsingle\n");
     printf("Program Options:\n");
     printf("  -b  --bench <START:END>    Benchmark mode, do not create display. Time frames [START,END)\n");
     printf("  -f  --file  <FILENAME>     Dump frames in benchmark mode (FILENAME_xxxx.ppm)\n");
@@ -84,14 +85,23 @@ int main(int argc, char** argv)
 
     sceneNameStr = argv[optind];
 
-    if (sceneNameStr.compare("snow") == 0)
+    if (sceneNameStr.compare("snow") == 0) {
         sceneName = SNOWFLAKES;
-    else if (sceneNameStr.compare("rgb") == 0)
+    } else if (sceneNameStr.compare("snowsingle") == 0) {
+        sceneName = SNOWFLAKES_SINGLE_FRAME;
+    } else if (sceneNameStr.compare("rgb") == 0) {
         sceneName = CIRCLE_RGB;
-    else if (sceneNameStr.compare("circles") == 0)
-        sceneName = CIRCLE_TEST;
-    else {
-        fprintf(stderr, "Unknown scene name (%s). valid names are: rgb circles snow\n", sceneNameStr.c_str());
+    } else if (sceneNameStr.compare("rgby") == 0) {
+        sceneName = CIRCLE_RGBY;
+    } else if (sceneNameStr.compare("rand10k") == 0) {
+        sceneName = CIRCLE_TEST_10K;
+    } else if (sceneNameStr.compare("rand100k") == 0) {
+        sceneName = CIRCLE_TEST_100K;
+    } else if (sceneNameStr.compare("pattern") == 0) {
+        sceneName = PATTERN;
+    } else {
+        fprintf(stderr, "Unknown scene name (%s)\n", sceneNameStr.c_str());
+        usage(argv[0]);
         return 1;
     }
 
