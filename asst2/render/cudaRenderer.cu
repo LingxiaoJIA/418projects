@@ -464,8 +464,9 @@ __global__ void kernelRenderCircles() {
 
     for(int pi=0; pi < PPT; pi++) {
         //calculate my pixel coordinates and ptrs
-        int pixel_x = region_xmin + ((threadIndex * PPT + pi) % PPB_X);
-        int pixel_y = region_ymin + ((threadIndex * PPT + pi) / PPB_X);
+        int pixel_index = (threadIndex + TPB * pi); //interleaved
+        int pixel_x = region_xmin + (pixel_index % PPB_X);
+        int pixel_y = region_ymin + (pixel_index / PPB_X);
         float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * cuConstRendererParams.imageWidth + pixel_x)]);
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
