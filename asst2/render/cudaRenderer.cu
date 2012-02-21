@@ -17,11 +17,10 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define TPB_X 16
-#define TPB_Y 16
+#define TPB_X 32
+#define TPB_Y 32
 #define TPB (TPB_X * TPB_Y)
 
-#define CIRC_LIST_SIZE 32
 
 struct GlobalConstants {
 
@@ -358,7 +357,6 @@ __global__ void kernelRenderCircles() {
     __shared__ uint circle_list[1500];
     __shared__ uint circle_list_count[TPB];
     __shared__ uint circle_list_index[TPB];
-    //__shared__ uint scratch[2*TPB];
     
     int region_x = blockIdx.x; 
     int region_y = blockIdx.y;
@@ -405,12 +403,7 @@ __global__ void kernelRenderCircles() {
           float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
           float  rad = cuConstRendererParams.radius[i];
 
-          if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
-
-           //add to this threads list of circles 
-//           circle_lists[threadIndex][privateCount] = i;
-           privateCount += 1;
-         }
+          privateCount += circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
     }
 
     // store my result in circle_list_counts
@@ -433,22 +426,20 @@ __global__ void kernelRenderCircles() {
           float  rad = cuConstRendererParams.radius[i];
 
           if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
-
-           //add to this threads list of circles 
-           circle_list[myIndex] = i;
-           myIndex += 1;
+             //add to this threads list of circles 
+             circle_list[myIndex++] = i;
          }
     }
 
 
-    if(blockIdx.x == 7 && blockIdx.y == 7) {
+/*    if(blockIdx.x == 7 && blockIdx.y == 7) {
         if(threadIndex == 0) {
-            /*for (int i=0; i < TPB; i++) {
+            for (int i=0; i < TPB; i++) {
                 printf("%u: %u\t%u\n", i, circle_list_count[i], circle_list_index[i]);
-            } */
+            }
             printf("total count: %u\n", totalCount);
         }
-    }
+    } */
 
     /*************************************************
      * Phase 2
