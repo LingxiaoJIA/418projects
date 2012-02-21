@@ -413,17 +413,18 @@ __global__ void kernelRenderCircles() {
     if(threadIndex == TPB - 1)
         circEnd = numCircles - 1;
 
+    uint private_circle_list[16];
+
     int privateCount = 0;
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
 
           // read position and radius
           float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-         float  rad = cuConstRendererParams.radius[i];
+          float  rad = cuConstRendererParams.radius[i];
 
-
-
-          privateCount += circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+          if( circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB) )
+            private_circle_list[privateCount++] = i;
     }
 
     // store my result in circle_list_counts
@@ -438,25 +439,16 @@ __global__ void kernelRenderCircles() {
     int totalCount = circle_list_index[TPB-1] + circle_list_count[TPB-1];
     int myIndex = circle_list_index[threadIndex];
 
-    for(int i = circStart; i <= circEnd; i++) {
-          int index3 = 3 * i;
-
-          // read position and radius
-          float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-          float  rad = cuConstRendererParams.radius[i];
-
-          if (circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
-             //add to this threads list of circles 
-             circle_list[myIndex++] = i;
-         }
+    for(int i = 0; i < privateCount; i++ ) {
+        circle_list[myIndex++] = private_circle_list[i];
     }
 
-
-/*    if(blockIdx.x == 1 && blockIdx.y == 1) {
+    if(blockIdx.x == 1 && blockIdx.y == 1) {
         if(threadIndex == 0) {
             printf("total count: %u\n", totalCount);
+            printf("privateCount:%u\n", privateCount);
         }
-    } */
+    } 
 
     /*************************************************
      * Phase 2
