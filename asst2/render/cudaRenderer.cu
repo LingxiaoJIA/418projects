@@ -21,7 +21,7 @@
 #define TPB_Y 16
 #define TPB (TPB_X * TPB_Y)
 
-#define CIRC_LIST_START_SIZE 32
+#define CIRC_LIST_SIZE 32
 
 struct GlobalConstants {
 
@@ -293,17 +293,9 @@ __global__ void kernelRenderCircles() {
 
     int threadIndex = threadIdx.y * TPB_X + threadIdx.x;
 
-    __shared__ int** circle_lists;
-    __shared__ int* circle_list_counts;
-    if(threadIndex == 0) {
-        circle_lists = (int**) malloc(sizeof(int*) * TPB);
-        if(circle_lists == NULL)
-            printf("malloc failed\n");
-        circle_list_counts = (int*) malloc(sizeof(int) * TPB);
-        if(circle_list_counts == NULL)
-            printf("malloc failed\n");
-    }
-    __syncthreads();
+    //__shared__ int*  circle_lists[TPB];
+    __shared__ int  circle_lists[TPB][CIRC_LIST_SIZE];
+    __shared__ int circle_list_counts[TPB];
     
     int region_x = blockIdx.x; 
     int region_y = blockIdx.y;
@@ -342,14 +334,12 @@ __global__ void kernelRenderCircles() {
         circEnd = numCircles - 1;
 
     // malloc circle_list in device heap memory
-    circle_list_counts[threadIndex] = 0;
-    int circle_list_size = (CIRC_LIST_START_SIZE > circlesPerThread)? circlesPerThread: CIRC_LIST_START_SIZE;
-    circle_lists[threadIndex] = (int*) malloc(sizeof(int) * circle_list_size);
-    if(circle_lists[threadIndex] == NULL)
-        printf("Malloc failed");
+    int privateCount = 0;
+//    int circle_list_size = (CIRC_LIST_START_SIZE > circlesPerThread)? circlesPerThread: CIRC_LIST_START_SIZE;
+//    circle_lists[threadIndex] = (int*) malloc(sizeof(int) * circle_list_size);
+//    if(circle_lists[threadIndex] == NULL)
+//        printf("Malloc failed");
 
-    //float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
-    
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
 
@@ -360,24 +350,18 @@ __global__ void kernelRenderCircles() {
           if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
 
            //add to this threads list of circles 
-           if(circle_list_counts[threadIndex] == circle_list_size) {
-              int* new_circle_list = (int*) malloc(2 * sizeof(int) * circle_list_size);
-              if(new_circle_list == NULL) {
-                printf("Malloc failed");
-              }
-              for(int j=0; j < circle_list_size; j++) {
-                new_circle_list[j] = circle_lists[threadIndex][j];
-              }
-              free(circle_lists[threadIndex]);
-              circle_lists[threadIndex] = new_circle_list;
-              circle_list_size *= 2;
-           }
-           circle_lists[threadIndex][circle_list_counts[threadIndex]] = i;
-           circle_list_counts[threadIndex] += 1;
+           circle_lists[threadIndex][privateCount] = i;
+           privateCount += 1;
          }
       }
-      //if(blockIdx.x == 0 && blockIdx.y == 63)
-        // printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
+
+      if(privateCount >= CIRC_LIST_SIZE) {
+          printf("I OVERFLOWED MY THREAD CIRCLE LIST SIZE TO %d\n", privateCount);
+      }
+
+      circle_list_counts[threadIndex] = privateCount;
+      //if(blockIdx.x == 7 && blockIdx.y == 7)
+         //printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
 
     /*************************************************
      * Phase 2
@@ -413,13 +397,7 @@ __global__ void kernelRenderCircles() {
         }
     }
 
-    __syncthreads();
-    free(circle_lists[threadIndex]);
-    __syncthreads();
-    if (threadIndex == 0) {
-        free(circle_lists);
-        free(circle_list_counts);
-    }
+    //__syncthreads();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
