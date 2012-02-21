@@ -407,11 +407,6 @@ __global__ void kernelRenderCircles() {
      *************************************************/
 
     int numCircles = cuConstRendererParams.numCircles;
-    int circlesPerThread = numCircles / TPB;
-    int circStart = threadIndex * circlesPerThread;
-    int circEnd = circStart + circlesPerThread - 1;
-    if(threadIndex == TPB - 1)
-        circEnd = numCircles - 1;
 
     uint private_circle_list[16];
 
