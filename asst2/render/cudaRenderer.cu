@@ -17,9 +17,15 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define TPB_X 16
-#define TPB_Y 16
+#define TPB_X 32
+#define TPB_Y 32
 #define TPB (TPB_X * TPB_Y)
+
+#define PPT_X 4
+
+#define PPB_X (TPB_X * PPT_X)
+#define PPB_Y TPB_Y
+#define PPB (PPB_X * PPB_Y)
 
 #define CIRC_LIST_SIZE (2*TPB > 1500)?2*TPB:1500
 
@@ -378,29 +384,23 @@ __global__ void kernelRenderCircles() {
     __shared__ uint circle_list_count[TPB];
     __shared__ uint circle_list_index[TPB];
     
-    int region_x = blockIdx.x; 
-    int region_y = blockIdx.y;
-
-    short imageWidth = cuConstRendererParams.imageWidth;
-    short imageHeight = cuConstRendererParams.imageHeight;
-    float invWidth = 1.f / imageWidth;
-    float invHeight = 1.f / imageHeight;
+    float invWidth = 1.f / cuConstRendererParams.imageWidth;
+    float invHeight = 1.f / cuConstRendererParams.imageHeight;
 
     //compute bounding box of region
-    short region_xmin = TPB_X * region_x;
-    short region_xmax = TPB_X * (region_x + 1) - 1;
-    short region_ymin = TPB_Y * region_y;
-    short region_ymax = TPB_Y * (region_y + 1) - 1;
-
-    //account for boxes possibly pushed out of bounds by rounding
-    region_xmax = (region_xmax < imageWidth) ? region_xmax : imageWidth - 1;
-    region_ymax = (region_ymax < imageHeight) ? region_ymax : imageHeight - 1;
+    short region_xmin = PPB_X * blockIdx.x;
+    short region_xmax = PPB_X * (blockIdx.x + 1) - 1;
+    short region_ymin = PPB_Y * blockIdx.y;
+    short region_ymax = PPB_Y * (blockIdx.y + 1) - 1;
 
     // convert to normalized float coords
     float boxL = invWidth * region_xmin;
     float boxR = invWidth * region_xmax;
     float boxB = invHeight * region_ymin;
     float boxT = invHeight * region_ymax;
+
+
+
 
     /*************************************************
      * Phase 1
@@ -414,7 +414,6 @@ __global__ void kernelRenderCircles() {
     if(threadIndex == TPB - 1)
         circEnd = numCircles - 1;
 
-    // malloc circle_list in device heap memory
     int privateCount = 0;
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
@@ -435,8 +434,8 @@ __global__ void kernelRenderCircles() {
     __syncthreads();
 
     // use my prefix scan index to store my circles
-    int myIndex = circle_list_index[threadIndex];
     int totalCount = circle_list_index[TPB-1] + circle_list_count[TPB-1];
+    int myIndex = circle_list_index[threadIndex];
 
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
@@ -452,7 +451,7 @@ __global__ void kernelRenderCircles() {
     }
 
 
-    if(blockIdx.x == 7 && blockIdx.y == 7) {
+    if(blockIdx.x == 7 && blockIdx.y == blockDim.y-1) {
         if(threadIndex == 0) {
             printf("total count: %u\n", totalCount);
         }
@@ -464,30 +463,26 @@ __global__ void kernelRenderCircles() {
      *************************************************/
      
     __syncthreads();
-    //calculate my pixel coordinates
-    int pixel_x = region_xmin + threadIdx.x;
-    int pixel_y = region_ymin + threadIdx.y;
 
-    //check that we're on screen - use region since's its already clamped
-    if (!(pixel_x < imageWidth && pixel_y < imageHeight)) {
-      //bail
-      return;
+    for(int p=0; p < PPT_X; p++) {
+        //calculate my pixel coordinates and ptrs
+        int pixel_x = region_xmin + (PPT_X * threadIdx.x) + p;
+        int pixel_y = region_ymin + threadIdx.y;
+        float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * cuConstRendererParams.imageWidth + pixel_x)]);
+        float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
+        for(int c = 0; c < totalCount; c++) {
+                int ci = circle_list[c];
+                int index3 = 3 * ci;
+
+                // read position and radius
+                float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+
+                //get the pointer
+
+                shadePixel(ci, pixelCenterNorm, p, imgPtr);
+        }
     }
 
-    int ci;
-    for(int c = 0; c < totalCount; c++) {
-            ci = circle_list[c];
-            int index3 = 3 * ci;
-
-            // read position and radius
-            float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-
-            //get the pointer
-            float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * imageWidth + pixel_x)]);
-            float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
-
-            shadePixel(ci, pixelCenterNorm, p, imgPtr);
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -599,8 +594,8 @@ CudaRenderer::setup() {
     // for optimizing access to constant memory.  Using global memory
     // here would have worked just as well.  See the Programmer's
     // Guide for more information about constant memory.
-    numXRegions = ((image->width-1) / TPB_X) + 1;   // rounding up
-    numYRegions = ((image->height-1) / TPB_Y) + 1; // rounding up
+    numXRegions = ((image->width-1) / PPB_X) + 1;   // rounding up
+    numYRegions = ((image->height-1) / PPB_Y) + 1; // rounding up
 
     GlobalConstants params;
     params.sceneName = sceneName;
