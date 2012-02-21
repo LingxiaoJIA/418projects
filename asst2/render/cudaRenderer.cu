@@ -28,7 +28,7 @@
 #define PPB_Y (TPB_Y * PPT_SQ_RT)
 #define PPB (PPB_X * PPB_Y)
 
-#define PREF_CIRC_LIST_SIZE 2048
+#define PREF_CIRC_LIST_SIZE 2500
 #define CIRC_LIST_SIZE (2*TPB > PREF_CIRC_LIST_SIZE)?2*TPB:PREF_CIRC_LIST_SIZE
 
 struct GlobalConstants {
@@ -416,7 +416,7 @@ __global__ void kernelRenderCircles() {
     uint private_circle_list[16];
 
     int privateCount = 0;
-    for(int i = circStart; i <= circEnd; i++) {
+    for(int i = threadIndex; i <= numCircles; i += TPB) {
           int index3 = 3 * i;
 
           // read position and radius
