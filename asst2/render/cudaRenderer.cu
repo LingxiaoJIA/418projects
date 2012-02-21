@@ -280,6 +280,68 @@ circleInBox(
     }
 }
 
+#define LOG2_WARP_SIZE 5U
+#define WARP_SIZE (1U << LOG2_WARP_SIZE)
+#define SCAN_BLOCK_DIM TPB
+
+//Almost the same as naive scan1Inclusive, but doesn't need __syncthreads()
+//assuming size <= WARP_SIZE
+inline __device__ uint
+warpScanInclusive(int threadIndex, uint idata, volatile uint *s_Data, uint size){
+    uint pos = 2 * threadIndex - (threadIndex & (size - 1));
+    s_Data[pos] = 0;
+    pos += size;
+    s_Data[pos] = idata;
+
+    for(uint offset = 1; offset < size; offset <<= 1)
+        s_Data[pos] += s_Data[pos - offset];
+
+    return s_Data[pos];
+}
+
+inline __device__ uint warpScanExclusive(int threadIndex, uint idata, volatile uint *sScratch, uint size){
+    return warpScanInclusive(threadIndex, idata, sScratch, size) - idata;
+}
+
+__inline__ __device__ void
+sharedMemExclusiveScan(int threadIndex, uint* sInput, uint* sOutput, volatile uint* sScratch, uint size)
+{
+    if (size > WARP_SIZE) {
+
+        uint idata = sInput[threadIndex];
+
+        //Bottom-level inclusive warp scan
+        uint warpResult = warpScanInclusive(threadIndex, idata, sScratch, WARP_SIZE);
+
+        // Save top elements of each warp for exclusive warp scan sync
+        // to wait for warp scans to complete (because s_Data is being
+        // overwritten)
+        __syncthreads();
+
+        if ( (threadIndex & (WARP_SIZE - 1)) == (WARP_SIZE - 1) )
+            sScratch[threadIndex >> LOG2_WARP_SIZE] = warpResult;
+
+        // wait for warp scans to complete
+        __syncthreads();
+
+        if ( threadIndex < (SCAN_BLOCK_DIM / WARP_SIZE)) {
+            // grab top warp elements
+            uint val = sScratch[threadIndex];
+            // calculate exclusive scan and write back to shared memory
+            sScratch[threadIndex] = warpScanExclusive(threadIndex, val, sScratch, size >> LOG2_WARP_SIZE);
+        }
+
+        //return updated warp scans with exclusive scan results
+        __syncthreads();
+
+        sOutput[threadIndex] = warpResult + sScratch[threadIndex >> LOG2_WARP_SIZE] - idata;
+
+    } else if (threadIndex < WARP_SIZE) {
+        uint idata = sInput[threadIndex];
+        sOutput[threadIndex] = warpScanExclusive(threadIndex, idata, sScratch, size);
+    }
+}
+
 
 // kernelRenderCircles -- (CUDA device code)
 //
@@ -293,9 +355,10 @@ __global__ void kernelRenderCircles() {
 
     int threadIndex = threadIdx.y * TPB_X + threadIdx.x;
 
-    //__shared__ int*  circle_lists[TPB];
-    __shared__ int  circle_lists[TPB][CIRC_LIST_SIZE];
-    __shared__ int circle_list_counts[TPB];
+    __shared__ uint circle_list[1500];
+    __shared__ uint circle_list_count[TPB];
+    __shared__ uint circle_list_index[TPB];
+    //__shared__ uint scratch[2*TPB];
     
     int region_x = blockIdx.x; 
     int region_y = blockIdx.y;
@@ -335,10 +398,32 @@ __global__ void kernelRenderCircles() {
 
     // malloc circle_list in device heap memory
     int privateCount = 0;
-//    int circle_list_size = (CIRC_LIST_START_SIZE > circlesPerThread)? circlesPerThread: CIRC_LIST_START_SIZE;
-//    circle_lists[threadIndex] = (int*) malloc(sizeof(int) * circle_list_size);
-//    if(circle_lists[threadIndex] == NULL)
-//        printf("Malloc failed");
+    for(int i = circStart; i <= circEnd; i++) {
+          int index3 = 3 * i;
+
+          // read position and radius
+          float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+          float  rad = cuConstRendererParams.radius[i];
+
+          if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
+
+           //add to this threads list of circles 
+//           circle_lists[threadIndex][privateCount] = i;
+           privateCount += 1;
+         }
+    }
+
+    // store my result in circle_list_counts
+    circle_list_count[threadIndex] = privateCount;
+    __syncthreads();
+
+    // perform prefix scan
+    sharedMemExclusiveScan(threadIndex, circle_list_count, circle_list_index, circle_list, TPB);
+    __syncthreads();
+
+    // use my prefix scan index to store my circles
+    int myIndex = circle_list_index[threadIndex];
+    int totalCount = circle_list_index[TPB-1] + circle_list_count[TPB-1];
 
     for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
@@ -350,23 +435,26 @@ __global__ void kernelRenderCircles() {
           if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
 
            //add to this threads list of circles 
-           circle_lists[threadIndex][privateCount] = i;
-           privateCount += 1;
+           circle_list[myIndex] = i;
+           myIndex += 1;
          }
-      }
+    }
 
-      if(privateCount >= CIRC_LIST_SIZE) {
-          printf("I OVERFLOWED MY THREAD CIRCLE LIST SIZE TO %d\n", privateCount);
-      }
 
-      circle_list_counts[threadIndex] = privateCount;
-      //if(blockIdx.x == 7 && blockIdx.y == 7)
-         //printf("t-idx: %d circ-count: %d\n", threadIndex, circle_list_counts[threadIndex]);
+    if(blockIdx.x == 7 && blockIdx.y == 7) {
+        if(threadIndex == 0) {
+            /*for (int i=0; i < TPB; i++) {
+                printf("%u: %u\t%u\n", i, circle_list_count[i], circle_list_index[i]);
+            } */
+            printf("total count: %u\n", totalCount);
+        }
+    }
 
     /*************************************************
      * Phase 2
      *    render each pixel in this region based off circle-list
      *************************************************/
+     
     __syncthreads();
     //calculate my pixel coordinates
     int pixel_x = region_xmin + threadIdx.x;
@@ -379,11 +467,8 @@ __global__ void kernelRenderCircles() {
     }
 
     int ci;
-
-    for(int c = 0; c < TPB; c++) {
-
-        for(int i = 0; i < circle_list_counts[c]; i++) {
-            ci = circle_lists[c][i];
+    for(int c = 0; c < totalCount; c++) {
+            ci = circle_list[c];
             int index3 = 3 * ci;
 
             // read position and radius
@@ -394,10 +479,7 @@ __global__ void kernelRenderCircles() {
             float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
             shadePixel(ci, pixelCenterNorm, p, imgPtr);
-        }
     }
-
-    //__syncthreads();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
