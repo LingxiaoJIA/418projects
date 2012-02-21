@@ -17,17 +17,19 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define TPB_X 32
-#define TPB_Y 32
+#define TPB_X 16
+#define TPB_Y 16
 #define TPB (TPB_X * TPB_Y)
 
-#define PPT_X 4
+#define PPT_SQ_RT 2
+#define PPT (PPT_SQ_RT * PPT_SQ_RT)
 
-#define PPB_X (TPB_X * PPT_X)
-#define PPB_Y TPB_Y
+#define PPB_X (TPB_X * PPT_SQ_RT)
+#define PPB_Y (TPB_Y * PPT_SQ_RT)
 #define PPB (PPB_X * PPB_Y)
 
-#define CIRC_LIST_SIZE (2*TPB > 1500)?2*TPB:1500
+#define PREF_CIRC_LIST_SIZE 2048
+#define CIRC_LIST_SIZE (2*TPB > PREF_CIRC_LIST_SIZE)?2*TPB:PREF_CIRC_LIST_SIZE
 
 struct GlobalConstants {
 
@@ -298,7 +300,7 @@ circleInBoxConservative(
     if ( circleX >= (boxL - circleRadius) &&
          circleX <= (boxR + circleRadius) &&
          circleY >= (boxB - circleRadius) &&
-         circleY >= (boxT + circleRadius) ) {
+         circleY <= (boxT + circleRadius) ) {
         return 1;
     } else {
         return 0;
@@ -399,9 +401,6 @@ __global__ void kernelRenderCircles() {
     float boxB = invHeight * region_ymin;
     float boxT = invHeight * region_ymax;
 
-
-
-
     /*************************************************
      * Phase 1
      *   build circle-list for each region
@@ -420,9 +419,11 @@ __global__ void kernelRenderCircles() {
 
           // read position and radius
           float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-          float  rad = cuConstRendererParams.radius[i];
+         float  rad = cuConstRendererParams.radius[i];
 
-          privateCount += circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+
+
+          privateCount += circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
     }
 
     // store my result in circle_list_counts
@@ -444,18 +445,18 @@ __global__ void kernelRenderCircles() {
           float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
           float  rad = cuConstRendererParams.radius[i];
 
-          if (circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
+          if (circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB)) {
              //add to this threads list of circles 
              circle_list[myIndex++] = i;
          }
     }
 
 
-    if(blockIdx.x == 7 && blockIdx.y == blockDim.y-1) {
+/*    if(blockIdx.x == 1 && blockIdx.y == 1) {
         if(threadIndex == 0) {
             printf("total count: %u\n", totalCount);
         }
-    }
+    } */
 
     /*************************************************
      * Phase 2
@@ -463,24 +464,21 @@ __global__ void kernelRenderCircles() {
      *************************************************/
      
     __syncthreads();
+    
+    for(int c = 0; c < totalCount; c++) {
+        int ci = circle_list[c];
+        int index3 = 3 * ci;
+        float3 pix = *(float3*)(&cuConstRendererParams.position[index3]);
 
-    for(int p=0; p < PPT_X; p++) {
+    for(int pi=0; pi < PPT; pi++) {
         //calculate my pixel coordinates and ptrs
-        int pixel_x = region_xmin + (PPT_X * threadIdx.x) + p;
-        int pixel_y = region_ymin + threadIdx.y;
+        int pixel_x = region_xmin + ((threadIndex * PPT + pi) % PPB_X);
+        int pixel_y = region_ymin + ((threadIndex * PPT + pi) / PPB_X);
         float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixel_y * cuConstRendererParams.imageWidth + pixel_x)]);
         float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f), invHeight * (static_cast<float>(pixel_y) + 0.5f));
-        for(int c = 0; c < totalCount; c++) {
-                int ci = circle_list[c];
-                int index3 = 3 * ci;
 
-                // read position and radius
-                float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-
-                //get the pointer
-
-                shadePixel(ci, pixelCenterNorm, p, imgPtr);
-        }
+            shadePixel(ci, pixelCenterNorm, pix, imgPtr);
+    }
     }
 
 }
