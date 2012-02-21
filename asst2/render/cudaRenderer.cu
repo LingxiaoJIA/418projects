@@ -17,10 +17,11 @@
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
 
-#define TPB_X 32
-#define TPB_Y 32
+#define TPB_X 16
+#define TPB_Y 16
 #define TPB (TPB_X * TPB_Y)
 
+#define CIRC_LIST_SIZE (2*TPB > 1500)?2*TPB:1500
 
 struct GlobalConstants {
 
@@ -279,6 +280,25 @@ circleInBox(
     }
 }
 
+__device__ __inline__ int
+circleInBoxConservative(
+    float circleX, float circleY, float circleRadius,
+    float boxL, float boxR, float boxT, float boxB)
+{
+
+    // expand box by circle radius.  Test if circle center is in the
+    // expanded box.
+
+    if ( circleX >= (boxL - circleRadius) &&
+         circleX <= (boxR + circleRadius) &&
+         circleY >= (boxB - circleRadius) &&
+         circleY >= (boxT + circleRadius) ) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 #define LOG2_WARP_SIZE 5U
 #define WARP_SIZE (1U << LOG2_WARP_SIZE)
 #define SCAN_BLOCK_DIM TPB
@@ -354,7 +374,7 @@ __global__ void kernelRenderCircles() {
 
     int threadIndex = threadIdx.y * TPB_X + threadIdx.x;
 
-    __shared__ uint circle_list[1500];
+    __shared__ uint circle_list[CIRC_LIST_SIZE];
     __shared__ uint circle_list_count[TPB];
     __shared__ uint circle_list_index[TPB];
     
@@ -432,14 +452,11 @@ __global__ void kernelRenderCircles() {
     }
 
 
-/*    if(blockIdx.x == 7 && blockIdx.y == 7) {
+    if(blockIdx.x == 7 && blockIdx.y == 7) {
         if(threadIndex == 0) {
-            for (int i=0; i < TPB; i++) {
-                printf("%u: %u\t%u\n", i, circle_list_count[i], circle_list_index[i]);
-            }
             printf("total count: %u\n", totalCount);
         }
-    } */
+    }
 
     /*************************************************
      * Phase 2
