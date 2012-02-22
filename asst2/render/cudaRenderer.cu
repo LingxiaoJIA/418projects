@@ -135,13 +135,11 @@ __global__ void kernelAdvanceFirework() {
     float* positionPtr = &cuConstRendererParams.position[index3];
     float* velocityPtr = &cuConstRendererParams.velocity[index3];
     float* colorPtr = &cuConstRendererParams.color[index3];
-    float* radiusPtr = &cuConstRendererParams.radius[index];
 
     // loads from global memory
     float3 position = *((float3*)positionPtr);
     float3 velocity = *((float3*)velocityPtr);
     float3 color = *((float3*)colorPtr);
-    float radius = *((float*)radiusPtr);
 
     float bseed1 = (float)(((int)((.279f + 0.344f * blockIdx.x + (position.x * position.y )) * 1001)) % 213) / 213.f;
     float bseed2 = (float)(((int)((.199f + 0.744f * blockIdx.x + (position.x * position.y )) * 1003)) % 173) / 173.f;
