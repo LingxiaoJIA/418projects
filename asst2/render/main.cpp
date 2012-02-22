@@ -99,6 +99,8 @@ int main(int argc, char** argv)
         sceneName = CIRCLE_TEST_100K;
     } else if (sceneNameStr.compare("pattern") == 0) {
         sceneName = PATTERN;
+    } else if (sceneNameStr.compare("fireworks") == 0) {
+        sceneName = FIREWORKS;
     } else {
         fprintf(stderr, "Unknown scene name (%s)\n", sceneNameStr.c_str());
         usage(argv[0]);
