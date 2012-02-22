@@ -143,13 +143,13 @@ __global__ void kernelAdvanceFirework() {
     float3 color = *((float3*)colorPtr);
     float radius = *((float*)radiusPtr);
 
-    float bseed1 = (float)(((int)((.279f + 0.344f * blockIdx.x + (position.x * position.y )) * 1000)) % 213) / 213.f;
-    float bseed2 = (float)(((int)((.199f + 0.744f * blockIdx.x + (position.x * position.y )) * 1000)) % 173) / 173.f;
-    float bseed3 = (float)(((int)((.377f + 0.33f * blockIdx.x + (position.x * position.y )) * 1000)) % 231) / 231.f;
-    float bseed4 = (float)(((int)((.277f + 0.27f * blockIdx.x + (position.x * position.y )) * 1000)) % 339) / 339.f;
+    float bseed1 = (float)(((int)((.279f + 0.344f * blockIdx.x + (position.x * position.y )) * 1001)) % 213) / 213.f;
+    float bseed2 = (float)(((int)((.199f + 0.744f * blockIdx.x + (position.x * position.y )) * 1003)) % 173) / 173.f;
+    float bseed3 = (float)(((int)((.377f + 0.33f * blockIdx.x + (position.x * position.y )) * 1005)) % 231) / 231.f;
+    float bseed4 = (float)(((int)((.277f + 0.27f * blockIdx.x + (position.x * position.y )) * 1007)) % 339) / 339.f;
 
-    float tseed1 = (float)(((int)((.179f + 0.355f * threadIdx.x + (position.x * position.y )) * 1000)) % 233) / 233.f;
-    float tseed2 = (float)(((int)((.379f + 0.776f * threadIdx.x + (position.x * position.y )) * 1000)) % 173) / 173.f;
+    float tseed1 = (float)(((int)((.179f + 6.352f * threadIdx.x + position.y ) * 1007)) % 231) / 231.f;
+    float tseed2 = (float)(((int)((.379f + 9.776f * threadIdx.x + position.x ) * 1003)) % 173) / 173.f;
     tseed1 = 2.f*(tseed1-0.5f);
     tseed2 = 2.f*(tseed2-0.5f);
     float dist = sqrt((tseed1 * tseed1) + (tseed2 * tseed2));
