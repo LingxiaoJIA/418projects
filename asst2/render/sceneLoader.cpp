@@ -98,7 +98,33 @@ loadCircleScene(
     float*& radius)
 {
 
-    if (sceneName == SNOWFLAKES) {
+    if (sceneName == FIREWORKS) {
+        numCircles = 10 * 1000;
+
+        position = new float[3 * numCircles];
+        velocity = new float[3 * numCircles];
+        color = new float[3 * numCircles];
+        radius = new float[numCircles];
+
+        for (int i=0; i<numCircles; i++) {
+            int index3 = 3 * i;
+            position[index3] = 0.f;
+            position[index3+1] = 0.f;
+            position[index3+2] = 0.f;
+
+            velocity[index3] = 0.f;
+            velocity[index3+1] = 0.f;
+            velocity[index3+2] = 0.f;
+
+            color[index3] = 0.f;
+            color[index3+1] = 0.f;
+            color[index3+2] = 0.f;
+
+            radius[i] = 0.005f;
+        
+        }
+
+    } else if (sceneName == SNOWFLAKES) {
 
         // 100K circles
         //
@@ -146,6 +172,7 @@ loadCircleScene(
             velocity[index3] = 0.f;
             velocity[index3+1] = 0.f;
             velocity[index3+2] = 0.f;
+            
         }
 
     } else if (sceneName == SNOWFLAKES_SINGLE_FRAME) {

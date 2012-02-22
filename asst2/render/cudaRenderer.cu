@@ -97,6 +97,27 @@ __global__ void kernelClearImageSnowflake() {
     *(float4*)(&cuConstRendererParams.imageData[offset]) = value;
 }
 
+__global__ void kernelClearImageFireworks() {
+
+    int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+    int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int width = cuConstRendererParams.imageWidth;
+    int height = cuConstRendererParams.imageHeight;
+
+    if (imageX >= width || imageY >= height)
+        return;
+
+    int offset = 4 * (imageY * width + imageX);
+    float shade = .0f;
+    float4 value = make_float4(shade, shade, shade, 1.f);
+
+    // write to global memory: As an optimization, I use a float4
+    // store, that results in more efficient code than if I coded this
+    // up as four seperate fp32 stores.
+    *(float4*)(&cuConstRendererParams.imageData[offset]) = value;
+}
+
 // kernelClearImage --  (CUDA device code)
 //
 // Clear the image, setting all pixels to the specified color rgba
@@ -118,6 +139,85 @@ __global__ void kernelClearImage(float r, float g, float b, float a) {
     // store, that results in more efficient code than if I coded this
     // up as four seperate fp32 stores.
     *(float4*)(&cuConstRendererParams.imageData[offset]) = value;
+}
+
+
+__global__ void kernelAdvanceFirework() {
+    __shared__ float3 blastCenter;
+    __shared__ float3 blastColor;
+    __shared__ bool do_reset;
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= cuConstRendererParams.numCircles)
+        return;
+    int index3 = 3 * index;
+    const float dt = 1.f / 200.f;
+
+    float* positionPtr = &cuConstRendererParams.position[index3];
+    float* velocityPtr = &cuConstRendererParams.velocity[index3];
+    float* colorPtr = &cuConstRendererParams.color[index3];
+
+    // loads from global memory
+    float3 position = *((float3*)positionPtr);
+    float3 velocity = *((float3*)velocityPtr);
+    float3 color = *((float3*)colorPtr);
+
+    float bseed1 = (float)(((int)((0.3f * blockIdx.x + (position.x * position.y )) * 1000)) % 233) / 233.f;
+    float bseed2 = (float)(((int)((0.7f * blockIdx.x + (position.x * position.y )) * 1000)) % 173) / 173.f;
+    float bseed3 = (float)(((int)((0.33f * blockIdx.x + (position.x * position.y )) * 1000)) % 233) / 239.f;
+    float bseed4 = (float)(((int)((0.27f * blockIdx.x + (position.x * position.y )) * 1000)) % 339) / 339.f;
+
+    float tseed1 = (float)(((int)((0.3f * threadIdx.x + (position.x * position.y )) * 1000)) % 233) / 233.f;
+    float tseed2 = (float)(((int)((0.7f * threadIdx.x + (position.x * position.y )) * 1000)) % 173) / 173.f;
+    tseed1 = 2.f*(tseed1-0.5f);
+    tseed2 = 2.f*(tseed2-0.5f);
+    float dist = sqrt((tseed1 * tseed1) + (tseed2 * tseed2));
+    if(dist > 1.0) {
+        tseed1 = tseed1 / dist;
+        tseed2 = tseed2 / dist;
+    }
+
+    // update positions
+    position.x += velocity.x * dt;
+    position.y += velocity.y * dt;
+
+    velocity.x = (velocity.x * 0.99f);
+    velocity.y = (velocity.y * 0.99f);
+
+    color.x = color.x * 0.96f;
+    color.y = color.y * 0.96f;
+    color.z = color.z * 0.96f;
+
+    if(threadIdx.x == 0) {
+        if(velocity.x < 0.1f && velocity.x > -0.1f) {
+        //particle has been invalidated, re-lanuch this firework
+            do_reset = true;
+            blastCenter.x = bseed1;
+            blastCenter.y = bseed2;
+            blastColor.x = bseed3;
+            blastColor.y = bseed4;
+            blastColor.z = bseed1;
+            printf("Blassstt p(%f, %f) c(%f, %f, %f)\n", blastCenter.x, blastCenter.y, blastColor.x, blastColor.y, blastColor.z);
+        } else {
+            do_reset = false;
+        }
+    }
+    __syncthreads();
+    if(do_reset) {
+        position.x = blastCenter.x;
+        position.y = blastCenter.y;
+        color.x = blastColor.x;
+        color.y = blastColor.y;
+        color.z = blastColor.z;
+        velocity.x = tseed1;
+        velocity.y = tseed2;
+    }
+
+    // store updated positions and velocities to global memory
+    *((float3*)positionPtr) = position;
+    *((float3*)velocityPtr) = velocity;
+    *((float3*)colorPtr) = color;
+
 }
 
 // kernelAdvanceSnowflake -- (CUDA device code)
@@ -241,6 +341,10 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
         maxAlpha = kCircleMaxAlpha * fmaxf(fminf(maxAlpha, 1.f), 0.f); // kCircleMaxAlpha * clamped value
         alpha = maxAlpha * exp(-1.f * falloffScale * normPixelDist * normPixelDist);
 
+    } else if (cuConstRendererParams.sceneName == FIREWORKS) {
+        int index3 = 3 * circleIndex;
+        rgb = *(float3*)&(cuConstRendererParams.color[index3]);
+        alpha = .9f;
     } else {
         // simple: each circle has an assigned color
         int index3 = 3 * circleIndex;
@@ -650,6 +754,8 @@ CudaRenderer::clearImage() {
 
     if (sceneName == SNOWFLAKES || sceneName == SNOWFLAKES_SINGLE_FRAME) {
         kernelClearImageSnowflake<<<gridDim, blockDim>>>();
+    } else if (sceneName == FIREWORKS) {
+        kernelClearImageFireworks<<<gridDim, blockDim>>>();
     } else {
         kernelClearImage<<<gridDim, blockDim>>>(1.f, 1.f, 1.f, 1.f);
     }
@@ -672,7 +778,14 @@ CudaRenderer::advanceAnimation() {
 
         kernelAdvanceSnowflake<<<gridDim, blockDim>>>();
         cudaThreadSynchronize();
+    } else if (sceneName == FIREWORKS) {
+        dim3 blockDim(1000, 1); // 100 particles per blast
+        dim3 gridDim(10); // 50 blasts
+
+        kernelAdvanceFirework<<<gridDim, blockDim>>>();
+        cudaThreadSynchronize();
     }
+
 }
 
 void
