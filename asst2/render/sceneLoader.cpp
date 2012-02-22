@@ -99,7 +99,7 @@ loadCircleScene(
 {
 
     if (sceneName == FIREWORKS) {
-        numCircles = 10 * 1000;
+        numCircles = 16 * 256;
 
         position = new float[3 * numCircles];
         velocity = new float[3 * numCircles];
@@ -108,9 +108,9 @@ loadCircleScene(
 
         for (int i=0; i<numCircles; i++) {
             int index3 = 3 * i;
-            position[index3] = 0.f;
-            position[index3+1] = 0.f;
-            position[index3+2] = 0.f;
+            position[index3] = 0.1f;
+            position[index3+1] = 0.1f;
+            position[index3+2] = 0.1f;
 
             velocity[index3] = 0.f;
             velocity[index3+1] = 0.f;
@@ -121,7 +121,6 @@ loadCircleScene(
             color[index3+2] = 0.f;
 
             radius[i] = 0.005f;
-        
         }
 
     } else if (sceneName == SNOWFLAKES) {
