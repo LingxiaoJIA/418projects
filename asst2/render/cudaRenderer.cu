@@ -485,13 +485,18 @@ __global__ void kernelRenderCircles() {
      * Phase 1
      *   build circle-list for each region
      *************************************************/
-
     int numCircles = cuConstRendererParams.numCircles;
+    int circlesPerThread = numCircles / TPB;
+    int circStart = threadIndex * circlesPerThread;
+    int circEnd = circStart + circlesPerThread - 1;
+    if(threadIndex == TPB - 1)
+        circEnd = numCircles - 1;
 
     uint private_circle_list[16];
 
     int privateCount = 0;
-    for(int i = threadIndex; i <= numCircles; i += TPB) {
+
+    for(int i = circStart; i <= circEnd; i++) {
           int index3 = 3 * i;
 
           // read position and radius
@@ -755,8 +760,8 @@ CudaRenderer::advanceAnimation() {
         kernelAdvanceSnowflake<<<gridDim, blockDim>>>();
         cudaThreadSynchronize();
     } else if (sceneName == FIREWORKS) {
-        dim3 blockDim(256, 1); // 100 particles per blast
-        dim3 gridDim(16); // 50 blasts
+        dim3 blockDim(128, 1); // 100 particles per blast
+        dim3 gridDim(8); // 50 blasts
 
         kernelAdvanceFirework<<<gridDim, blockDim>>>();
         cudaThreadSynchronize();
