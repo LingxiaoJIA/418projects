@@ -1,0 +1,13 @@
+
+#define NUM_THREADS_PER_BLOCK 256
+
+#define NUM_DISTORTIONS 1
+
+#define LETTER_WIDTH 100
+#define LETTER_HEIGHT 150
+
+#define LETTER_BYTES (LETTER_WIDTH * LETTER_HEIGHT * sizeof(float))
+
+#define DISTORTIONS_BUFFER_BYTES (NUM_DISTORTIONS * LETTER_BYTES)
+
+#define distortionsIndex(d, x, y) ((LETTER_WIDTH * LETTER_HEIGHT * d) + (LETTER_WIDTH * y) + x)
