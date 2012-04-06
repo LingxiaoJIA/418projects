@@ -11,46 +11,61 @@ extern float toBW(int bytes, float sec);
 
 
 __global__ void
-chartest_kernel(float* distortions, float* target, int targetW, int targetH, int numLocations, float* results) {
+chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, float* target, int tWidth, int tHeight, int numLocations, float* results) {
 //    if(dID == 0)
 //        printf("[T%d hello]\n", tid);
 
     int threadId = threadIdx.x;
     int blockId = blockIdx.x;
     
-    int rangeW = targetW - LETTER_WIDTH;
-    //int rangeH = targetH - LETTER_HEIGHT;
+    int rangeW = tWidth - EDGE_DONT_BOTHER;
 
     int locId = blockId * NUM_THREADS_PER_BLOCK + threadId;
     if(locId >= numLocations)
         return;
 
-    int locX = locId % rangeW;
-    int locY = locId / rangeW;
+    int tx_c = locId % rangeW;
+    int ty_c = locId / rangeW;
 
 //    int totalLocs = w_range * h_range;
 
     float maxVal = 0.0;
-    for(int d = 0; d < NUM_DISTORTIONS; d++) {
+    for(int d = 0; d < numDistortions; d++) {
         // do all of the distortions at this location
 
-        int x_0 = locX;
-        int y_0 = locY;
+        // calculate index of this distortion in buffer, pull out width/height
+        int dIndex = (d * maxDistortionSize);
+        int dWidth = int(distortions[dIndex++]);
+        int dHeight = int(distortions[dIndex++]);
+        
+        // calculate location to work on
+        int tx_0 = tx_c - (dWidth / 2);
+        int ty_0 = ty_c - (dHeight / 2);
+        if(tx_0 < 0 || ty_0 < 0 || tx_0 + dWidth >= tWidth || ty_0 + dHeight >= tHeight)
+            continue;
 
         float sum_let = 0.0;
         float sum_conv = 0.0;
-        for(int y = 0; y < LETTER_HEIGHT; y++) {
-            for(int x = 0; x < LETTER_WIDTH; x++) {
-                /* calculate index into letter buffer */
-                int dIdx = distortionsIndex(d, x, y);
-
+        for(int dy = 0; dy < dHeight; dy++) {
+            for(int dx = 0; dx < dWidth; dx++) {
                 /* calculate index into target buffer */
-                int t_x = x_0 + x;
-                int t_y = y_0 + y;
-                int tIdx = t_y * targetW + t_x;
+                int tx = tx_0 + dx;
+                int ty = ty_0 + dy;
+                int tIndex = ty * tWidth + tx;
 
-                sum_let += distortions[dIdx];
-                sum_conv += (distortions[dIdx] * target[tIdx]);
+                float t = target[tIndex];
+                float d = distortions[dIndex++];
+
+                /* Version 1
+                 *   rewards matching as a percentage of pixels present */
+                sum_let += d;
+                sum_conv += (d * t);
+                
+                /* Version 2
+                 *   rewards matching and punishes noise */
+                //sum_let += d;
+                //sum_conv += ( ((3 * d * t) - t) / 2.0);
+                 
             }
         }
         float val = sum_conv / sum_let;
@@ -67,7 +82,7 @@ chartest_kernel(float* distortions, float* target, int targetW, int targetH, int
 }
 
 void
-charTest(float * distortionsBuf, float * targetBuf, int targetW, int targetH, int  numLocations, float * resultBuf) {
+charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int  numLocations, float * resultBuf) {
 
     const int targetBytes = targetW * targetH * sizeof(float);
 
@@ -82,8 +97,9 @@ charTest(float * distortionsBuf, float * targetBuf, int targetW, int targetH, in
     cudaMalloc(&device_target, targetBytes);
 
     // allocate letter buffers
+    int distortionBytes = numDistortions * maxDistortionSize * sizeof(float);
     float * device_distortions;
-    cudaMalloc( &device_distortions, DISTORTIONS_BUFFER_BYTES );
+    cudaMalloc( &device_distortions, distortionBytes );
 
     // allocate results buffer
     float * device_result;
@@ -95,11 +111,11 @@ charTest(float * distortionsBuf, float * targetBuf, int targetW, int targetH, in
     // copy target buffer
     cudaMemcpy(device_target, targetBuf, targetBytes, cudaMemcpyHostToDevice);
     // copy letter buffers
-    cudaMemcpy(device_distortions, distortionsBuf, DISTORTIONS_BUFFER_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_distortions, distortionsBuf, distortionBytes, cudaMemcpyHostToDevice);
 
     double kernelStartTime = CycleTimer::currentSeconds();
     // run kernel
-    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, device_target, targetW, targetH, numLocations, device_result);
+    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionSize, device_target, targetW, targetH, numLocations, device_result);
     cudaThreadSynchronize();
     double kernelEndTime = CycleTimer::currentSeconds();
 

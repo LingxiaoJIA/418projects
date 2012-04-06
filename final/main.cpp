@@ -6,10 +6,10 @@
 
 #include "defines.h"
 
-void charTest(float * distortionsBuf, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
+void charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
 void printCudaInfo();
-void imageRead(float* buf, std::string fileName, int width, int height);
-float* imageMallocRead(const char* fileName, int width, int height);
+float* imageRead(float* buf, int* width, int* height, std::string fileName);
+float* imageMallocRead(const char* fileName, int* width, int* height);
 char charLib[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 // return GB/s                                                                                   
@@ -42,34 +42,51 @@ void imageWrite(float * buf, const char* fileName, int width, int height) {
     outfile.close();
 }
 
-void imageRead(float* buf, const char* fileName, int width, int height) {
-   // printf("Reading in image \"%s\" (%dx%d)\n", fileName, width, height);
-
-    /* fake it */
-/*    for(int i=0; i < (width * height); i++) {
-        buf[i] = (float) rand() / (float) RAND_MAX;
-    } */
-
-    int i = 0;
+float* imageRead(float* buf, int * width, int* height, const char* fileName) {
+    //printf("Reading image %s\n", fileName);
     int hold;
     std::ifstream infile(fileName);
     if(!infile) {
         printf("\tImage read failed!\n");
-        return;
+        return NULL;
     }
 
-    while(infile >> hold && i < width * height) {
-        buf[i] = (float)hold / 255.0;
+    int w,h;
+    infile >> w;
+    infile >> h;
+    //printf("Dimensions %d x %d\n", w, h);
+
+
+    float* readBuf;
+    if(buf == NULL) {
+        //printf("Mallocing buffer\n");
+        readBuf = (float*) malloc( w * h * sizeof(float) );
+    } else {
+        //printf("Using provided buffer\n");
+        readBuf = buf;
+    }
+    
+    readBuf[0] = (float)(w);
+    readBuf[1] = (float)(h);
+    
+
+    int i = 2;
+    while(infile >> hold && i < w * h) {
+        readBuf[i] = (float)hold / 255.0;
         i++;
     }
     infile.close();
+    //printf("done reading, now just finish\n");
+    if(width != NULL && height != NULL) {
+        *width = w;
+        *height = h;
+    }
+    //printf("Image read success\n");
+    return readBuf;
 }
 
-float* imageMallocRead(const char* fileName, int width, int height) {
-    int bytes = width * height * sizeof(float);
-    float* temp = (float*)malloc(bytes);
-    imageRead(temp, fileName, width, height);
-    return temp;
+float* imageMallocRead(const char* fileName, int *width, int *height) {
+    return imageRead(NULL, width, height, fileName);
 }
 
 
@@ -77,49 +94,71 @@ int main(int argc, char** argv)
 {
     srand((unsigned)time(0));
 
-    int startIndex = 0;
-    int endIndex = 62;
-    if(argc == 3) {
-        startIndex = atoi(argv[1]);
-        endIndex = atoi(argv[2]);
-    } else if (argc != 1) {
+    if(argc != 2 && argc != 4) {
         usage(argv[0]);
+        return 1;
+    }
+    char * targetName = argv[1];
+    int startIndex = 0;
+    int endIndex = 26;
+    if(argc == 4) {
+        startIndex = atoi(argv[2]);
+        endIndex = atoi(argv[3]);
     }
     printf("running from %d to %d\n", startIndex, endIndex);
 
-    // setup memory stuff
-    int targetWidth = 400;
-    int targetHeight = 180;
-    int rangeWidth = targetWidth - LETTER_WIDTH;
-    int rangeHeight = targetHeight - LETTER_HEIGHT;
-    int numLocations = rangeWidth * rangeHeight;
 
-    float * targetBuf = imageMallocRead("./img/sampleimg.txt", targetWidth, targetHeight);
+    // setup memory stuff
+    int targetWidth, targetHeight;
+    float * targetBuf = imageMallocRead(targetName, &targetWidth, &targetHeight);
+
     // any sequential processing
+    int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
+    int rangeHeight = targetHeight - EDGE_DONT_BOTHER;  // dont both with some of the edges
+    int numLocations = rangeWidth * rangeHeight;
     
     printCudaInfo();
 
     char guess[10];
-    for(int g = 0; g < 10; g++)
+    float guessVal[10];
+    for(int g = 0; g < 10; g++) {
         guess[g] = '_';
+        guessVal[g] = 0.0;
+    }
 
     for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
         char curChar = charLib[charIndex];
-        printf("Running [%c] @ %d locations x %d distortions \n", curChar, numLocations, NUM_DISTORTIONS);
 
         /************************************
          *  Setup Distortions Buffer Input
          ***********************************/
-        float * distortionsBuf = (float*) malloc(DISTORTIONS_BUFFER_BYTES);
+        std::string libCharPath = "./lib/mangallib/" + std::string(&curChar, 1) + "_lower/";
+        std::string statFile = libCharPath + "stats.txt";
+    
+        std::ifstream infile(statFile.c_str());
+        if(!infile) {
+            printf("\tImage read failed!\n");
+            return 1;
+        }
+        int numDistortions, maxDistortionSize;
+        infile >> numDistortions;
+        infile >> maxDistortionSize;
+        infile.close();
+        
+        printf("Running [%c] @ %d locations x %d distortions \n", curChar, numLocations, numDistortions);
+
+        maxDistortionSize += 2;
+        int maxDistortionBytes = maxDistortionSize * sizeof(float);
+
+        float * distortionsBuf = (float*) malloc(numDistortions * maxDistortionBytes);
 
         float * thisDistortion = distortionsBuf;
-        for(int d = 0; d < NUM_DISTORTIONS; d++) {
+        for(int d = 0; d < numDistortions; d++) {
             char temp[10];
             sprintf(temp, "%d", d);
-//            std::string letterPath = "./letters/" + std::string(&curChar, 1) + "_" + std::string(temp);
-            std::string distortionPath = "./img/" + std::string(&curChar, 1) + "/" + temp;
-            imageRead(thisDistortion, distortionPath.c_str(), LETTER_WIDTH, LETTER_HEIGHT);
-            thisDistortion += LETTER_BYTES;
+            std::string distortionPath = "./lib/mangallib/" + std::string(&curChar, 1) + "_lower/" + temp;
+            imageRead(thisDistortion, NULL, NULL, distortionPath.c_str());
+            thisDistortion += maxDistortionSize;
         }
         
         /************************************
@@ -130,9 +169,9 @@ int main(int argc, char** argv)
         /************************************
          *  Execute Kernel
          ***********************************/
-        //printf("Evaluating %c\n", curChar);
+        printf("Evaluating %c\n", curChar);
     
-        charTest(distortionsBuf, targetBuf, targetWidth, targetHeight, numLocations, resultBuf);
+        charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, numLocations, resultBuf);
         
         /************************************
          *  Use Results To Guess
@@ -148,7 +187,10 @@ int main(int argc, char** argv)
         printf("\tMax Val : %f\n", maxVal);
         if(maxVal > 0.3) {
             int guessX = (maxLoc % rangeWidth) * 10 / rangeWidth;
-            guess[guessX] = curChar;
+            if(maxVal > guessVal[guessX]) {
+                guess[guessX] = curChar;
+                guessVal[guessX] = maxVal;
+             }
         }
         
         /************************************
