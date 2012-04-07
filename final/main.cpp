@@ -8,8 +8,8 @@
 
 void charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
 void printCudaInfo();
-float* imageRead(float* buf, int* width, int* height, std::string fileName);
-float* imageMallocRead(const char* fileName, int* width, int* height);
+float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
+float* imageMallocRead(const char* fileName, int* width, int* height, bool);
 char charLib[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 // return GB/s                                                                                   
@@ -42,7 +42,7 @@ void imageWrite(float * buf, const char* fileName, int width, int height) {
     outfile.close();
 }
 
-float* imageRead(float* buf, int * width, int* height, const char* fileName) {
+float* imageRead(float* buf, int * width, int* height, const char* fileName, bool storeWH) {
     //printf("Reading image %s\n", fileName);
     int hold;
     std::ifstream infile(fileName);
@@ -66,12 +66,14 @@ float* imageRead(float* buf, int * width, int* height, const char* fileName) {
         readBuf = buf;
     }
     
-    readBuf[0] = (float)(w);
-    readBuf[1] = (float)(h);
-    
+    int i = 0;
+    if(storeWH) {
+        readBuf[0] = (float)(w);
+        readBuf[1] = (float)(h);
+        i = 2;
+    }
 
-    int i = 2;
-    while(infile >> hold && i < w * h) {
+    while(infile >> hold && i < ((w * h)+2)) {
         readBuf[i] = (float)hold / 255.0;
         i++;
     }
@@ -85,8 +87,8 @@ float* imageRead(float* buf, int * width, int* height, const char* fileName) {
     return readBuf;
 }
 
-float* imageMallocRead(const char* fileName, int *width, int *height) {
-    return imageRead(NULL, width, height, fileName);
+float* imageMallocRead(const char* fileName, int *width, int *height, bool storeWH) {
+    return imageRead(NULL, width, height, fileName, storeWH);
 }
 
 
@@ -105,12 +107,13 @@ int main(int argc, char** argv)
         startIndex = atoi(argv[2]);
         endIndex = atoi(argv[3]);
     }
+    int numChars = endIndex - startIndex + 1;
     printf("running from %d to %d\n", startIndex, endIndex);
 
 
     // setup memory stuff
     int targetWidth, targetHeight;
-    float * targetBuf = imageMallocRead(targetName, &targetWidth, &targetHeight);
+    float * targetBuf = imageMallocRead(targetName, &targetWidth, &targetHeight, false);
 
     // any sequential processing
     int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
@@ -119,13 +122,7 @@ int main(int argc, char** argv)
     
     printCudaInfo();
 
-    char guess[10];
-    float guessVal[10];
-    for(int g = 0; g < 10; g++) {
-        guess[g] = '_';
-        guessVal[g] = 0.0;
-    }
-
+    float * results[numChars];
     for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
         char curChar = charLib[charIndex];
 
@@ -157,7 +154,7 @@ int main(int argc, char** argv)
             char temp[10];
             sprintf(temp, "%d", d);
             std::string distortionPath = "./lib/mangallib/" + std::string(&curChar, 1) + "_lower/" + temp;
-            imageRead(thisDistortion, NULL, NULL, distortionPath.c_str());
+            imageRead(thisDistortion, NULL, NULL, distortionPath.c_str(), true);
             thisDistortion += maxDistortionSize;
         }
         
@@ -165,6 +162,7 @@ int main(int argc, char** argv)
          *  Setup Results Buffer Output
          ***********************************/
         float* resultBuf = (float*) malloc(numLocations * sizeof(float));
+        results[charIndex] = resultBuf;
 
         /************************************
          *  Execute Kernel
@@ -176,22 +174,6 @@ int main(int argc, char** argv)
         /************************************
          *  Use Results To Guess
          ***********************************/
-        float maxVal = 0.0;
-        int maxLoc = 0;
-        for(int r = 0; r < numLocations; r++) {
-            if(resultBuf[r] > maxVal) {
-                maxVal = resultBuf[r];
-                maxLoc = r;
-            }
-        }
-        printf("\tMax Val : %f\n", maxVal);
-        if(maxVal > 0.3) {
-            int guessX = (maxLoc % rangeWidth) * 10 / rangeWidth;
-            if(maxVal > guessVal[guessX]) {
-                guess[guessX] = curChar;
-                guessVal[guessX] = maxVal;
-             }
-        }
         
         /************************************
          *  Write Map To Image
@@ -203,17 +185,47 @@ int main(int argc, char** argv)
          *  Clean Up For This Letter
          ***********************************/
         free(distortionsBuf);
-        free(resultBuf);
     }
 
-    printf("Guess : ");
-    for(int g=0; g< 10; g++)
-        if (guess[g] != '_')
-            printf("%c ", guess[g]);
-    printf("\n");
+
+    /************************************
+     *  Post Processing
+     ***********************************/
+    printf("Beginning post processing\n");
+    for(int xmin=0; xmin < targetWidth - WINDOW; xmin += (WINDOW / 2)) {
+        int xmax = x + WINDOW - 1;
+        printf("Window %d - %d\n", xmin, xmax);
+
+        char queue[5];
+        int size = 0;
+        for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
+            int maxV = 0.0;
+            for(int y = 0; y < targetHeight; y++) {
+                for(int x = xmin; x < xmax; x++) {
+                    float v = results[charIndex][y][x];
+                    if(v > maxV) {
+                        maxV = v;
+                    }
+                }
+            }
+
+            // try inserting this value into queue
 
 
+            }
+        }
+    }
+
+
+
+    /************************************
+     *  Global Clean Up
+     ***********************************/
     free(targetBuf);
+    for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
+        free(results[charIndex]);
+    }
+
     
     return 0;
 }

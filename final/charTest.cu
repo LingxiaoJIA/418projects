@@ -58,17 +58,17 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
 
                 /* Version 1
                  *   rewards matching as a percentage of pixels present */
-                sum_let += d;
-                sum_conv += (d * t);
+                //sum_let += d;
+                //sum_conv += (d * t);
                 
                 /* Version 2
                  *   rewards matching and punishes noise */
-                //sum_let += d;
-                //sum_conv += ( ((3 * d * t) - t) / 2.0);
+                sum_let += 1.0;
+                sum_conv += ( abs(d - t) );
                  
             }
         }
-        float val = sum_conv / sum_let;
+        float val = 1.0 - (float)(sum_conv / sum_let);
         if(val > maxVal) {
             maxVal = val;
         }

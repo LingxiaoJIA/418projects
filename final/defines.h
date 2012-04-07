@@ -3,4 +3,6 @@
 
 #define EDGE_DONT_BOTHER 0
 
+#define WINDOW 20
+
 #define distortionsIndex(d, x, y) ((LETTER_WIDTH * LETTER_HEIGHT * d) + (LETTER_WIDTH * y) + x)
