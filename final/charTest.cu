@@ -58,17 +58,63 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
 
                 /* Version 1
                  *   rewards matching as a percentage of pixels present */
-                //sum_let += d;
-                //sum_conv += (d * t);
+#ifdef v1
+                sum_let += d;
+                sum_conv += (d * t);
+#endif
                 
                 /* Version 2
-                 *   rewards matching and punishes noise */
-                sum_let += 1.0;
-                sum_conv += ( abs(d - t) );
+                 *   rewards matching, punishes noise and missing */
+#ifdef v2
+                sum_let += d;
+                float match = d*t;
+                float noise = (1-d)*t;
+                float missing = d*(1-t);
+                sum_conv += (match - 0.3*noise - 0.7*missing);
+#endif
+
+                /* Version 3
+                 *   closeness of nearest pixel */
+#ifdef v3
+                if(d > 0.9) {
+                    sum_let += 1.0;
+                    int tRight = tIndex;
+                    int tLeft = tIndex;
+                    int tUp = tIndex;
+                    int tDown = tIndex;
+                    float pixRes;
+                    if(t > 0.9)
+                        pixRes = 1.0; 
+                    else if (target[++tRight] > 0.9 ||
+                             target[--tLeft] > 0.9 ||
+                             target[tUp -= tWidth] > 0.9 ||
+                             target[tDown += tWidth] > 0.9)
+                        pixRes = 0.8;
+                    else if (target[++tRight] > 0.9 ||
+                             target[--tLeft] > 0.9 ||
+                             target[tUp -= tWidth] > 0.9 ||
+                             target[tDown += tWidth] > 0.9)
+                        pixRes = 0.2;
+                    else if (target[++tRight] > 0.9 ||
+                             target[--tLeft] > 0.9 ||
+                             target[tUp -= tWidth] > 0.9 ||
+                             target[tDown += tWidth] > 0.9)
+                        pixRes = 0.0;
+                    else
+                        pixRes = -0.0;
+                    sum_conv += pixRes;
+                  /*  if(tx_c == 41 && ty_c == 43) {
+                        printf("matched pixel (%d,%d) at %f\n", tx, ty, pixRes);
+                    } */
+                }
+#endif
                  
             }
         }
-        float val = 1.0 - (float)(sum_conv / sum_let);
+        //float val = (float)sum_conv;
+        float val = (float)(sum_conv / sum_let);
+        if(val < 0.0)
+            val = 0.0;
         if(val > maxVal) {
             maxVal = val;
         }
@@ -81,8 +127,9 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
 
 }
 
-void
+double
 charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int  numLocations, float * resultBuf) {
+    
 
     const int targetBytes = targetW * targetH * sizeof(float);
 
@@ -105,8 +152,6 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     float * device_result;
     cudaMalloc( &device_result, resultBytes );
 
-    // start timing after allocation of device memory
-    double startTime = CycleTimer::currentSeconds();
 
     // copy target buffer
     cudaMemcpy(device_target, targetBuf, targetBytes, cudaMemcpyHostToDevice);
@@ -119,22 +164,15 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     cudaThreadSynchronize();
     double kernelEndTime = CycleTimer::currentSeconds();
 
-    // TODO copy result from GPU using cudaMemcpy
+    // copy result from GPU using cudaMemcpy
     cudaMemcpy( resultBuf, device_result, resultBytes, cudaMemcpyDeviceToHost);
-
-    // end timing after result has been copied back into host memory
-    double endTime = CycleTimer::currentSeconds();
     
-    double overallDuration = endTime - startTime;
-    double kernelDuration = kernelEndTime - kernelStartTime;
-    printf("\tOverall: %.3f ms\n", 1000.f * overallDuration);
-    printf("\tKernel : %.3f ms\n", 1000.f * kernelDuration);
-    
-    // TODO free memory buffers on the GPU
+    //  free memory buffers on the GPU
     cudaFree(device_target);
     cudaFree(device_distortions);
     cudaFree(device_result);
-
+    
+    return( kernelEndTime - kernelStartTime);
 }
 
 void
