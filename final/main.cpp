@@ -8,6 +8,7 @@
 #include "defines.h"
 
 double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
+double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
 void printCudaInfo();
 float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
 float* imageMallocRead(const char* fileName, int* width, int* height, bool);
@@ -25,7 +26,7 @@ struct guess {
 void imageWrite(float * buf, const char* fileName, int width, int height) {
     std::ofstream outfile(fileName);
     if(!outfile) {
-        printf("\tImage read failed!\n");
+        printf("\tImage write %s failed!\n", fileName);
         return;
     }
     
@@ -44,7 +45,7 @@ float* imageRead(float* buf, int * width, int* height, const char* fileName, boo
     int hold;
     std::ifstream infile(fileName);
     if(!infile) {
-        printf("\tImage read failed!\n");
+        printf("\tImage read %s failed!\n", fileName);
         return NULL;
     }
 
@@ -273,7 +274,7 @@ int main(int argc, char** argv)
     
         std::ifstream infile(statFile.c_str());
         if(!infile) {
-            printf("\tImage read failed!\n");
+            printf("\tStatefile read %s failed!\n", statFile.c_str());
             return 1;
         }
         int numDistortions, maxDistortionSize;
@@ -488,7 +489,7 @@ int main(int argc, char** argv)
     
     double endTime = CycleTimer::currentSeconds();
     
-    double overallDuration = endTime - startTime - kernelDuration;
+    double overallDuration = endTime - startTime;
     printf("************************************\n");
     printf("\tKernel : %.3f ms\n", 1000.f * kernelDuration);
     printf("\tOverall: %.3f ms\n", 1000.f * overallDuration);
