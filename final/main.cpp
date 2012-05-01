@@ -7,7 +7,7 @@
 #include "CycleTimer.h"
 #include "defines.h"
 
-double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
+double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
 double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
 void printCudaInfo();
 float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
@@ -301,7 +301,7 @@ int main(int argc, char** argv)
         /************************************
          *  Setup Results Buffer Output
          ***********************************/
-        float* resultBuf = (float*) malloc(numLocations * sizeof(float));
+        float* resultBuf = (float*) malloc(rangeWidth * sizeof(float));
         results[charIndex] = resultBuf;
 
         /************************************
@@ -309,7 +309,7 @@ int main(int argc, char** argv)
          ***********************************/
         printf("Evaluating %c\n", curChar);
     
-        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, numLocations, resultBuf);
+        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         
         /************************************
          *  Use Results To Guess
@@ -318,8 +318,8 @@ int main(int argc, char** argv)
         /************************************
          *  Write Map To Image
          ***********************************/
-        std::string resultPath = "./res/" + charName + "_map";
-        imageWrite( resultBuf, resultPath.c_str(), rangeWidth, rangeHeight);
+        //std::string resultPath = "./res/" + charName + "_map";
+        //imageWrite( resultBuf, resultPath.c_str(), rangeWidth, rangeHeight);
         
         /************************************
          *  Clean Up For This Letter
@@ -346,12 +346,10 @@ int main(int argc, char** argv)
         for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
             char c = charLib[charIndex];
             float maxV = 0.0;
-            for(int y = 0; y < rangeHeight; y++) {
-                for(int x = xmin; x < xmax; x++) {
-                    float v = results[charIndex][rangeWidth * y + x];
-                    if(v > maxV) {
-                        maxV = v;
-                    }
+            for(int x = xmin; x < xmax; x++) {
+                float v = results[charIndex][x];
+                if(v > maxV) {
+                    maxV = v;
                 }
             }
 

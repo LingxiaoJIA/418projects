@@ -117,7 +117,7 @@ chartest_kernel_sequential(float* distortions, int numDistortions, int maxDistor
 
 
 __global__ void
-chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, float* target, int tWidth, int tHeight, int numLocations, float* results) {
+chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, float* target, int tWidth, int tHeight, int numLocations, float* map) {
 //    if(dID == 0)
 //        printf("[T%d hello]\n", tid);
 
@@ -225,12 +225,24 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
             maxVal = val;
         }
     }
-    results[locId] = maxVal;
+    map[locId] = maxVal;
 
 //    if(blockId == 0)
 //        printf("[T%d found max of %f for (%d,%d) ]\n", threadId, maxVal, locX, locY);
-    __syncthreads();
+    //__syncthreads();
 
+}
+
+__global__ void
+reduce_columns(int rangeW, int rangeH, float* map, float* results) {
+    int row = threadIdx.x;
+    float max = 0.0;
+    for(int c=0; c < rangeH; c++) {
+        int mapIndex = (rangeW * c) + row;
+        float thisV = map[mapIndex];
+        max = (thisV>max)?thisV:max;
+    }
+    results[row] = max;
 }
 
 double
@@ -253,16 +265,18 @@ charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortion
 }
 
 double
-charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int  numLocations, float * resultBuf) {
+charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
     
 
     const int targetBytes = targetW * targetH * sizeof(float);
+    const int numLocations = rangeW * rangeH;
 
     // compute number of blocks and threads per block
     const int threadsPerBlock = NUM_THREADS_PER_BLOCK;
     const int blocks = ((numLocations + NUM_THREADS_PER_BLOCK - 1) / NUM_THREADS_PER_BLOCK);
 
-    const int resultBytes = numLocations * sizeof(float);
+    const int mapBytes = numLocations * sizeof(float);
+    const int resultBytes = rangeW * sizeof(float);
 
     // allocate target buffer
     float* device_target;
@@ -273,7 +287,9 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     float * device_distortions;
     cudaMalloc( &device_distortions, distortionBytes );
 
-    // allocate results buffer
+    // allocate results buffers (full map, and final column-reduced)
+    float * device_map;
+    cudaMalloc( &device_map, mapBytes );
     float * device_result;
     cudaMalloc( &device_result, resultBytes );
 
@@ -284,10 +300,13 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     cudaMemcpy(device_distortions, distortionsBuf, distortionBytes, cudaMemcpyHostToDevice);
 
     double kernelStartTime = CycleTimer::currentSeconds();
-    // run kernel
-    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionSize, device_target, targetW, targetH, numLocations, device_result);
+    // run map evaluation kernel
+    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionSize, device_target, targetW, targetH, numLocations, device_map);
     cudaThreadSynchronize();
     double kernelEndTime = CycleTimer::currentSeconds();
+
+    // reduce columns
+    reduce_columns<<<1, rangeW>>>(rangeW, rangeH, device_map, device_result);
 
     // copy result from GPU using cudaMemcpy
     cudaMemcpy( resultBuf, device_result, resultBytes, cudaMemcpyDeviceToHost);
