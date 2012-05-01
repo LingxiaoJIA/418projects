@@ -8,7 +8,7 @@
 #include "defines.h"
 
 double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
-double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int numLocations, float* resultBuf);
+double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
 void printCudaInfo();
 float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
 float* imageMallocRead(const char* fileName, int* width, int* height, bool);
@@ -309,7 +309,8 @@ int main(int argc, char** argv)
          ***********************************/
         printf("Evaluating %c\n", curChar);
     
-        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        //kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         
         /************************************
          *  Use Results To Guess

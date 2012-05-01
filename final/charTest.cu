@@ -233,8 +233,22 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
 
 }
 
+/************************************
+ * Reduce Columns Functions
+ ***********************************/
+
+void reduce_columns_sequential(int rangeW, int rangeH, int row, float* map, float* results) {
+    float max = 0.0;
+    for(int c=0; c < rangeH; c++) {
+        int mapIndex = (rangeW * c) + row;
+        float thisV = map[mapIndex];
+        max = (thisV>max)?thisV:max;
+    }
+    results[row] = max;
+}
+
 __global__ void
-reduce_columns(int rangeW, int rangeH, float* map, float* results) {
+reduce_columns_kernel(int rangeW, int rangeH, float* map, float* results) {
     int row = threadIdx.x;
     float max = 0.0;
     for(int c=0; c < rangeH; c++) {
@@ -245,20 +259,34 @@ reduce_columns(int rangeW, int rangeH, float* map, float* results) {
     results[row] = max;
 }
 
+/************************************
+ * CharTest Functions
+ ***********************************/
+
 double
-charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int  numLocations, float * resultBuf) {
+charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
 
     const int threadsPerBlock = NUM_THREADS_PER_BLOCK;
+    int numLocations = rangeW * rangeH;
     const int blocks = ((numLocations + NUM_THREADS_PER_BLOCK - 1) / NUM_THREADS_PER_BLOCK);
+    
+    const int mapBytes = numLocations * sizeof(float);
+    float * mapBuf = (float*)malloc(mapBytes);
 
     double kernelStartTime = CycleTimer::currentSeconds();
     for(int b = 0; b < blocks; b++) {
         printf("Block %d/%d\n", b, blocks);
         for(int t = 0; t < threadsPerBlock; t++) {
-            chartest_kernel_sequential(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetW, targetH, numLocations, resultBuf, b, t);
+            chartest_kernel_sequential(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetW, targetH, numLocations, mapBuf, b, t);
         }
     }
     double kernelEndTime = CycleTimer::currentSeconds();
+
+    for(int r = 0; r < rangeW; r++) {
+        reduce_columns_sequential(rangeW, rangeH, r, mapBuf, resultBuf);
+    }
+
+    free(mapBuf);
     
     return( kernelEndTime - kernelStartTime);
 
@@ -306,7 +334,7 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     double kernelEndTime = CycleTimer::currentSeconds();
 
     // reduce columns
-    reduce_columns<<<1, rangeW>>>(rangeW, rangeH, device_map, device_result);
+    reduce_columns_kernel<<<1, rangeW>>>(rangeW, rangeH, device_map, device_result);
 
     // copy result from GPU using cudaMemcpy
     cudaMemcpy( resultBuf, device_result, resultBytes, cudaMemcpyDeviceToHost);
