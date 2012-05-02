@@ -5,7 +5,7 @@ CU_FILES   := charTest.cu
 
 CU_DEPS    :=
 
-CC_FILES   := main.cpp bmpfile.c image.c
+CC_FILES   := main.cpp  image.c EasyBMP.cpp
 
 ###########################################################
 

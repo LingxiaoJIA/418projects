@@ -1,5 +1,5 @@
 #include "image.h"
-#include "easybmp/EasyBMP.h"
+#include "EasyBMP.h"
 
 int imageRead(Image * buffer, char * path){
   int width, height, row, col;
