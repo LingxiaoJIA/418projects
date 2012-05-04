@@ -5,7 +5,7 @@ CU_FILES   := charTest.cu
 
 CU_DEPS    :=
 
-CC_FILES   := main.cpp
+CC_FILES   := main.cpp  image.c EasyBMP.cpp
 
 ###########################################################
 
@@ -17,7 +17,7 @@ NVCC=nvcc
 NVCCFLAGS=-O3 -m64 -arch compute_20
 
 
-OBJS=$(OBJDIR)/main.o  $(OBJDIR)/charTest.o
+OBJS=$(OBJDIR)/main.o  $(OBJDIR)/charTest.o $(OBJDIR)/EasyBMP.o $(OBJDIR)/image.o
 
 
 .PHONY: dirs clean
@@ -33,7 +33,7 @@ clean:
 $(EXECUTABLE): dirs $(OBJS)
 		$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
-$(OBJDIR)/%.o: %.cpp
+$(OBJDIR)/%.o: %.cpp %.c
 		$(CXX) $< $(CXXFLAGS) -c -o $@
 
 $(OBJDIR)/%.o: %.cu
