@@ -465,9 +465,11 @@ int main(int argc, char** argv)
                 if(overallGuess[choice].val > overallGuess[choice+1].val) {
                     finalGuess[choice] = overallGuess[choice];
                     overallGuess[choice] = empty;
+                    printf("choose %c\n",finalGuess[choice].c);
                 } else {
                     finalGuess[choice+1] = overallGuess[choice+1];
                     overallGuess[choice+1] = empty;
+                    printf("choose %c\n",finalGuess[choice+1].c);
                 }
                     
             } else {
@@ -477,8 +479,10 @@ int main(int argc, char** argv)
                 overallGuess[choice] = empty;
             }
             
+            gapStart++;
             numChosen++;
         } else {
+            printf("minigap at %d - %d\n", gapStart, gapEnd);
             gapStart = gapEnd + 1;
             gapEnd = gapStart + 1;
         }

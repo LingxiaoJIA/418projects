@@ -2,14 +2,14 @@
 
 import os
 
-testdir = './img/phptune/'
-#testdir = './img/nettune/'
+#testdir = './img/phptune/'
+testdir = './img/nettune/'
 caprequired = False
 
 def get_res(img):
     print 'running ' + str(img)
-    cmd = './charTest -s 0 -e 62 -p 1 -l lib/php/ '
-    #cmd = './charTest -s 0 -e 26 -p 2 -l lib/net/ '
+    #cmd = './charTest -s 0 -e 62 -p 1 -l lib/php/ '
+    cmd = './charTest -s 0 -e 26 -p 2 -l lib/net/ '
     cmd += testdir + img
     f = os.popen(cmd)
     for l in f.readlines():
