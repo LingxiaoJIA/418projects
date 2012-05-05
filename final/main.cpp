@@ -229,7 +229,7 @@ int main(int argc, char** argv)
         for(int d = 0; d < numDistortions; d++) {
             char temp[10];
             sprintf(temp, "%d", d);
-            std::string distortionPath = library + charName + "/" + temp;
+            std::string distortionPath = library + charName + "/" + temp + ".bmp";
             imageRead(thisDistortion, (char *)distortionPath.c_str());
             thisDistortion += maxDistortionBytes;
         }
