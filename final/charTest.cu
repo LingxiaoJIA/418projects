@@ -60,10 +60,11 @@ chartest_kernel_sequential(float* distortions, int numDistortions, int maxDistor
                  *   rewards matching, punishes noise and missing */
 #ifdef v2
                 sum_let += d;
-                float match = d*t;
-                float noise = (1-d)*t;
-                float missing = d*(1-t);
-                sum_conv += (match - 0.3*noise - 0.7*missing);
+                //float match = d*t;
+                //float noise = (1-d)*t;
+                //float missing = d*(1-t);
+                //sum_conv += (match - 0.3*noise - 0.7*missing);
+                sum_conv += (2*d*t - 0.3*t - 0.7*d);
 #endif
 
                 /* Version 3
@@ -106,11 +107,8 @@ chartest_kernel_sequential(float* distortions, int numDistortions, int maxDistor
         }
         //float val = (float)sum_conv;
         float val = (float)(sum_conv / sum_let);
-        if(val < 0.0)
-            val = 0.0;
-        if(val > maxVal) {
-            maxVal = val;
-        }
+        val = (val < 0.0)?0.0:val;
+        maxVal = (val > maxVal)?maxVal:val;
     }
     results[locId] = maxVal;
 }
@@ -154,9 +152,10 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
         float sum_conv = 0.0;
         for(int dy = 0; dy < dHeight; dy++) {
             for(int dx = 0; dx < dWidth; dx++) {
+            
                 /* calculate index into target buffer */
-                int tx = tx_0 + dx;
                 int ty = ty_0 + dy;
+                int tx = tx_0 + dx;
                 int tIndex = ty * tWidth + tx;
 
                 float t = target[tIndex];
@@ -173,10 +172,11 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
                  *   rewards matching, punishes noise and missing */
 #ifdef v2
                 sum_let += d;
-                float match = d*t;
-                float noise = (1-d)*t;
-                float missing = d*(1-t);
-                sum_conv += (match - 0.3*noise - 0.7*missing);
+                //float match = d*t;
+                //float noise = (1-d)*t;
+                //float missing = d*(1-t);
+                //sum_conv += (match - 0.3*noise - 0.7*missing);
+                sum_conv += (2*d*t - 0.3*t - 0.7*d);
 #endif
 
                 /* Version 3
@@ -219,11 +219,8 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
         }
         //float val = (float)sum_conv;
         float val = (float)(sum_conv / sum_let);
-        if(val < 0.0)
-            val = 0.0;
-        if(val > maxVal) {
-            maxVal = val;
-        }
+        val = (val < 0.0)?0.0:val;
+        maxVal = (val > maxVal)?val:maxVal;
     }
     map[locId] = maxVal;
 
@@ -293,10 +290,8 @@ charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortion
 }
 
 double
-charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
-    
+charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * device_target, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
 
-    const int targetBytes = targetW * targetH * sizeof(float);
     const int numLocations = rangeW * rangeH;
 
     // compute number of blocks and threads per block
@@ -305,10 +300,6 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
 
     const int mapBytes = numLocations * sizeof(float);
     const int resultBytes = rangeW * sizeof(float);
-
-    // allocate target buffer
-    float* device_target;
-    cudaMalloc(&device_target, targetBytes);
 
     // allocate letter buffers
     int distortionBytes = numDistortions * maxDistortionSize * sizeof(float);
@@ -322,8 +313,6 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     cudaMalloc( &device_result, resultBytes );
 
 
-    // copy target buffer
-    cudaMemcpy(device_target, targetBuf, targetBytes, cudaMemcpyHostToDevice);
     // copy letter buffers
     cudaMemcpy(device_distortions, distortionsBuf, distortionBytes, cudaMemcpyHostToDevice);
 
@@ -340,12 +329,32 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     cudaMemcpy( resultBuf, device_result, resultBytes, cudaMemcpyDeviceToHost);
     
     //  free memory buffers on the GPU
-    cudaFree(device_target);
     cudaFree(device_distortions);
     cudaFree(device_result);
     
     return( kernelEndTime - kernelStartTime);
 }
+
+
+/************************************
+ * One time memory transfer
+ ***********************************/
+
+float * sendTarget(float* targetBuf, int targetBytes) {
+    // allocate target buffer
+    float* device_target;
+    cudaMalloc(&device_target, targetBytes);
+
+    // copy target buffer
+    cudaMemcpy(device_target, targetBuf, targetBytes, cudaMemcpyHostToDevice);
+
+    return device_target;
+}
+
+void freeTarget(float* device_target) {
+    cudaFree(device_target);
+}
+
 
 void
 printCudaInfo() {

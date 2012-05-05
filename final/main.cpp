@@ -7,7 +7,12 @@
 #include "CycleTimer.h"
 #include "defines.h"
 
-double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
+// CUDA helper functions
+double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * device_target, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
+float * sendTarget(float* targetBuf, int targetBytes);
+void freeTarget(float* device_target);
+
+// misc functions
 double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
 void printCudaInfo();
 float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
@@ -247,6 +252,8 @@ int main(int argc, char** argv)
     // setup memory stuff
     int targetWidth, targetHeight;
     float * targetBuf = imageMallocRead(targetName, &targetWidth, &targetHeight, false);
+    int targetBytes = targetWidth * targetHeight * sizeof(float);
+    float * device_target = sendTarget(targetBuf, targetBytes);
 
     // any sequential processing
     int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
@@ -309,8 +316,8 @@ int main(int argc, char** argv)
          ***********************************/
         printf("Evaluating %c\n", curChar);
     
-        //kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
-        kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, targetBuf, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        //kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         
         /************************************
          *  Use Results To Guess
@@ -327,6 +334,8 @@ int main(int argc, char** argv)
          ***********************************/
         free(distortionsBuf);
     }
+
+    freeTarget(device_target);
 
 
     /************************************
