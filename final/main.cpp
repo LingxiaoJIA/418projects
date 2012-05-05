@@ -4,95 +4,24 @@
 #include <string>
 #include <fstream>
 
+#include "image.h"
 #include "CycleTimer.h"
 #include "defines.h"
 
 // CUDA helper functions
-double charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * device_target, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
-float * sendTarget(float* targetBuf, int targetBytes);
-void freeTarget(float* device_target);
+double charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
+char * sendTarget(char * targetBuf, int targetBytes);
+void freeTarget(char* device_target);
 
 // misc functions
 double charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * targetBuf, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
 void printCudaInfo();
-float* imageRead(float* buf, int* width, int* height, std::string fileName, bool);
-float* imageMallocRead(const char* fileName, int* width, int* height, bool);
 char charLib[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 struct guess {
     char c;
     float val;
 } ;
-
-/********************************************
- *  Image Functions
- * *****************************************/
-
-void imageWrite(float * buf, const char* fileName, int width, int height) {
-    std::ofstream outfile(fileName);
-    if(!outfile) {
-        printf("\tImage write %s failed!\n", fileName);
-        return;
-    }
-    
-    outfile << width << "\n" << height << "\n";
-
-    for(int i=0; i < width * height; i++) {
-        int temp = (int)(buf[i] * 255.0);
-        outfile << temp << "\n";
-    }
-
-    outfile.close();
-}
-
-float* imageRead(float* buf, int * width, int* height, const char* fileName, bool storeWH) {
-    //printf("Reading image %s\n", fileName);
-    int hold;
-    std::ifstream infile(fileName);
-    if(!infile) {
-        printf("\tImage read %s failed!\n", fileName);
-        return NULL;
-    }
-
-    int w,h;
-    infile >> w;
-    infile >> h;
-    //printf("Dimensions %d x %d\n", w, h);
-
-
-    float* readBuf;
-    if(buf == NULL) {
-        //printf("Mallocing buffer\n");
-        readBuf = (float*) malloc( w * h * sizeof(float) );
-    } else {
-        //printf("Using provided buffer\n");
-        readBuf = buf;
-    }
-    
-    int i = 0;
-    if(storeWH) {
-        readBuf[0] = (float)(w);
-        readBuf[1] = (float)(h);
-        i = 2;
-    }
-
-    while(infile >> hold && i < ((w * h)+2)) {
-        readBuf[i] = (float)hold / 255.0;
-        i++;
-    }
-    infile.close();
-    //printf("done reading, now just finish\n");
-    if(width != NULL && height != NULL) {
-        *width = w;
-        *height = h;
-    }
-    //printf("Image read success\n");
-    return readBuf;
-}
-
-float* imageMallocRead(const char* fileName, int *width, int *height, bool storeWH) {
-    return imageRead(NULL, width, height, fileName, storeWH);
-}
 
 /********************************************
  *  Post processing Helper Functions
@@ -250,12 +179,13 @@ int main(int argc, char** argv)
 
 
     // setup memory stuff
-    int targetWidth, targetHeight;
-    float * targetBuf = imageMallocRead(targetName, &targetWidth, &targetHeight, false);
-    int targetBytes = targetWidth * targetHeight * sizeof(float);
-    float * device_target = sendTarget(targetBuf, targetBytes);
+    char * targetBuf;
+    int targetBytes = imageReadMalloc(&targetBuf, targetName);
+    char * device_target = sendTarget(targetBuf, targetBytes);
 
     // any sequential processing
+    int targetWidth = ((Image *)targetBuf)->width;
+    int targetHeight = ((Image *)targetBuf)->height;
     int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int rangeHeight = targetHeight - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int numLocations = rangeWidth * rangeHeight;
@@ -291,18 +221,17 @@ int main(int argc, char** argv)
         
         printf("Running [%c] @ %d locations x %d distortions \n", curChar, numLocations, numDistortions);
 
-        maxDistortionSize += 2;
-        int maxDistortionBytes = maxDistortionSize * sizeof(float);
+        int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
 
-        float * distortionsBuf = (float*) malloc(numDistortions * maxDistortionBytes);
+        char * distortionsBuf = (char*) malloc(numDistortions * maxDistortionBytes);
 
-        float * thisDistortion = distortionsBuf;
+        char * thisDistortion = distortionsBuf;
         for(int d = 0; d < numDistortions; d++) {
             char temp[10];
             sprintf(temp, "%d", d);
             std::string distortionPath = library + charName + "/" + temp;
-            imageRead(thisDistortion, NULL, NULL, distortionPath.c_str(), true);
-            thisDistortion += maxDistortionSize;
+            imageRead(thisDistortion, (char *)distortionPath.c_str());
+            thisDistortion += maxDistortionBytes;
         }
         
         /************************************
@@ -316,7 +245,7 @@ int main(int argc, char** argv)
          ***********************************/
         printf("Evaluating %c\n", curChar);
     
-        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionBytes, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         //kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         
         /************************************

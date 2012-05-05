@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <driver_functions.h>
 
+#include "image.h"
 #include "CycleTimer.h"
 #include "defines.h"
 
@@ -115,7 +116,7 @@ chartest_kernel_sequential(float* distortions, int numDistortions, int maxDistor
 
 
 __global__ void
-chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, float* target, int tWidth, int tHeight, int numLocations, float* map) {
+chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, char* target, int tWidth, int tHeight, int numLocations, float* map) {
 //    if(dID == 0)
 //        printf("[T%d hello]\n", tid);
 
@@ -138,9 +139,11 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
         // do all of the distortions at this location
 
         // calculate index of this distortion in buffer, pull out width/height
-        int dIndex = (d * maxDistortionSize);
-        int dWidth = int(distortions[dIndex++]);
-        int dHeight = int(distortions[dIndex++]);
+        float * pixel = (float *) (distortions + d * maxDistortionBytes + sizeof(Image));
+	Image * header = (Image *)(distortions + d * maxDistortionBytes);
+        int dWidth = header->width;
+        int dHeight = header->height;
+        
         
         // calculate location to work on
         int tx_0 = tx_c - (dWidth / 2);
@@ -159,7 +162,7 @@ chartest_kernel(float* distortions, int numDistortions, int maxDistortionSize, f
                 int tIndex = ty * tWidth + tx;
 
                 float t = target[tIndex];
-                float d = distortions[dIndex++];
+                float d = *(pixel++);
 
                 /* Version 1
                  *   rewards matching as a percentage of pixels present */
@@ -290,7 +293,7 @@ charTestSequential(float * distortionsBuf, int numDistortions, int maxDistortion
 }
 
 double
-charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, float * device_target, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
+charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
 
     const int numLocations = rangeW * rangeH;
 
@@ -302,8 +305,8 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
     const int resultBytes = rangeW * sizeof(float);
 
     // allocate letter buffers
-    int distortionBytes = numDistortions * maxDistortionSize * sizeof(float);
-    float * device_distortions;
+    int distortionBytes = numDistortions * maxDistortionBytes;
+    char * device_distortions;
     cudaMalloc( &device_distortions, distortionBytes );
 
     // allocate results buffers (full map, and final column-reduced)
@@ -318,7 +321,7 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
 
     double kernelStartTime = CycleTimer::currentSeconds();
     // run map evaluation kernel
-    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionSize, device_target, targetW, targetH, numLocations, device_map);
+    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionBytes, device_target, targetW, targetH, numLocations, device_map);
     cudaThreadSynchronize();
     double kernelEndTime = CycleTimer::currentSeconds();
 
@@ -340,9 +343,9 @@ charTest(float * distortionsBuf, int numDistortions, int maxDistortionSize, floa
  * One time memory transfer
  ***********************************/
 
-float * sendTarget(float* targetBuf, int targetBytes) {
+char * sendTarget(char* targetBuf, int targetBytes) {
     // allocate target buffer
-    float* device_target;
+    char* device_target;
     cudaMalloc(&device_target, targetBytes);
 
     // copy target buffer
@@ -351,7 +354,7 @@ float * sendTarget(float* targetBuf, int targetBytes) {
     return device_target;
 }
 
-void freeTarget(float* device_target) {
+void freeTarget(char* device_target) {
     cudaFree(device_target);
 }
 
