@@ -19,7 +19,6 @@ NVCCFLAGS=-O3 -m64 -arch compute_20
 
 OBJS=$(OBJDIR)/main.o  $(OBJDIR)/charTest.o $(OBJDIR)/EasyBMP.o $(OBJDIR)/image.o
 
-
 .PHONY: dirs clean
 
 default: $(EXECUTABLE)
