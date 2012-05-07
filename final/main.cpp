@@ -23,6 +23,9 @@ struct guess {
     float val;
 } ;
 
+
+
+
 /********************************************
  *  Post processing Helper Functions
  * *****************************************/
@@ -181,11 +184,14 @@ int main(int argc, char** argv)
     // setup memory stuff
     char * targetBuf;
     int targetBytes = imageReadMalloc(&targetBuf, targetName);
-    char * device_target = sendTarget(targetBuf, targetBytes);
+    for(int i = 40*215; i < 41*215; i++)
+        printf("%f\n", ((float*)targetBuf)[i]);
+    char * device_target = sendTarget((targetBuf+sizeof(Image)), (targetBytes-sizeof(Image)));
 
     // any sequential processing
     int targetWidth = ((Image *)targetBuf)->width;
     int targetHeight = ((Image *)targetBuf)->height;
+    printf("%dx%d\n", targetWidth, targetHeight);
     int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int rangeHeight = targetHeight - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int numLocations = rangeWidth * rangeHeight;

@@ -23,7 +23,7 @@ int imageRead(char * buffer, char * path){
       red = input.GetPixel(col, row).Red;
       green = input.GetPixel(col, row).Green;
       blue = input.GetPixel(col, row).Blue;
-      data[row*width + col] = ((float) ((red + green + blue)/3)) / 255.0;
+      data[row*width + col] = 1.0 - (((float) ((red + green + blue)/3)) / 255.0);
     }
   }
   header->width = width;
@@ -56,7 +56,7 @@ int imageReadMalloc(char ** buffer, char * path){
       red = input.GetPixel(col, row).Red;
       green = input.GetPixel(col, row).Green;
       blue = input.GetPixel(col, row).Blue;
-      data[row*width + col] = ((float) ((red + green + blue)/3)) / 255.0;
+      data[row*width + col] = 1.0 - (((float) ((red + green + blue)/3)) / 255.0);
     }
   }
   header->width = width;

@@ -132,6 +132,8 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
     int tx_c = locId % rangeW;
     int ty_c = locId / rangeW;
 
+    float* targetFix = (float*)target;
+
 //    int totalLocs = w_range * h_range;
 
     float maxVal = 0.0;
@@ -143,7 +145,6 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
 	Image * header = (Image *)(distortions + d * maxDistortionBytes);
         int dWidth = header->width;
         int dHeight = header->height;
-        
         
         // calculate location to work on
         int tx_0 = tx_c - (dWidth / 2);
@@ -161,7 +162,7 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
                 int tx = tx_0 + dx;
                 int tIndex = ty * tWidth + tx;
 
-                float t = target[tIndex];
+                float t = targetFix[tIndex];
                 float d = *(pixel++);
 
                 /* Version 1
