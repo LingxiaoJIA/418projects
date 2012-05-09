@@ -48,6 +48,10 @@ int imageReadMalloc(char ** buffer, char * path){
   size = sizeof(Image) + width*height*sizeof(float);
 
   *buffer = (char *) malloc(size);
+  if(*buffer == NULL) {
+    printf("Error mallocing space");
+    return -1;
+  }
   header = (Image *)(*buffer);
   data = (float *)(*buffer + sizeof(Image));
 

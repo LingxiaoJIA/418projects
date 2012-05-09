@@ -184,39 +184,11 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
 #endif
 
                 /* Version 3
-                 *   closeness of nearest pixel */
+                 *   for recaptcha */
 #ifdef v3
-                if(d > 0.9) {
-                    sum_let += 1.0;
-                    int tRight = tIndex;
-                    int tLeft = tIndex;
-                    int tUp = tIndex;
-                    int tDown = tIndex;
-                    float pixRes;
-                    if(t > 0.9)
-                        pixRes = 1.0; 
-                    else if (target[++tRight] > 0.9 ||
-                             target[--tLeft] > 0.9 ||
-                             target[tUp -= tWidth] > 0.9 ||
-                             target[tDown += tWidth] > 0.9)
-                        pixRes = 0.8;
-                    else if (target[++tRight] > 0.9 ||
-                             target[--tLeft] > 0.9 ||
-                             target[tUp -= tWidth] > 0.9 ||
-                             target[tDown += tWidth] > 0.9)
-                        pixRes = 0.2;
-                    else if (target[++tRight] > 0.9 ||
-                             target[--tLeft] > 0.9 ||
-                             target[tUp -= tWidth] > 0.9 ||
-                             target[tDown += tWidth] > 0.9)
-                        pixRes = 0.0;
-                    else
-                        pixRes = -0.0;
-                    sum_conv += pixRes;
-                  /*  if(tx_c == 41 && ty_c == 43) {
-                        printf("matched pixel (%d,%d) at %f\n", tx, ty, pixRes);
-                    } */
-                }
+                sum_let += d;
+                sum_conv += (2*d*t - 0.2*t - 0.3*d);
+
 #endif
                  
             }

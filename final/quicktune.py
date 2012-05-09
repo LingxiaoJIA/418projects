@@ -3,13 +3,15 @@
 import os
 
 #testdir = './img/phptune/'
-testdir = './img/nettune/'
+#testdir = './img/nettune/'
+testdir = './img/recaptchatune/'
 caprequired = False
 
 def get_res(img):
     print 'running ' + str(img)
     #cmd = './charTest -s 0 -e 62 -p 1 -l lib/php/ '
-    cmd = './charTest -s 0 -e 26 -p 2 -l lib/net/ '
+    #cmd = './charTest -s 0 -e 26 -p 2 -l lib/net/ '
+    cmd = './charTest -s 0 -e 52 -p 1 -l lib/recaptcha/ '
     cmd += testdir + img
     f = os.popen(cmd)
     for l in f.readlines():
@@ -54,6 +56,7 @@ tot_right = 0
 tot_cnt = 0
 for correct in os.listdir(testdir):
     res = get_res(correct)
+    correct = correct.split('.')[0]
     if not caprequired:
         correct = correct.lower()
         res = res.lower()

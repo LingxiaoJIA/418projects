@@ -171,6 +171,7 @@ int main(int argc, char** argv)
         usage(argv[0]);
     targetName = argv[optind];
 
+    printCudaInfo();
 
     /************************************
      *  Initial Setup
@@ -182,11 +183,15 @@ int main(int argc, char** argv)
 
 
     // setup memory stuff
+    printf("Setting up target\n");
     char * targetBuf;
     int targetBytes = imageReadMalloc(&targetBuf, targetName);
-    for(int i = 40*215; i < 41*215; i++)
-        printf("%f\n", ((float*)targetBuf)[i]);
+    if(targetBytes < 0) {
+        printf("Target image read failed\n");
+        exit(-1);
+    }
     char * device_target = sendTarget((targetBuf+sizeof(Image)), (targetBytes-sizeof(Image)));
+    printf("Setting up target [COMPLETE]\n");
 
     // any sequential processing
     int targetWidth = ((Image *)targetBuf)->width;
@@ -196,7 +201,6 @@ int main(int argc, char** argv)
     int rangeHeight = targetHeight - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int numLocations = rangeWidth * rangeHeight;
     
-    printCudaInfo();
 
     float * results[numChars];
     for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
@@ -218,18 +222,23 @@ int main(int argc, char** argv)
         std::ifstream infile(statFile.c_str());
         if(!infile) {
             printf("\tStatefile read %s failed!\n", statFile.c_str());
-            return 1;
+            exit(-1);
         }
         int numDistortions, maxDistortionSize;
         infile >> numDistortions;
         infile >> maxDistortionSize;
         infile.close();
         
-        printf("Running [%c] @ %d locations x %d distortions \n", curChar, numLocations, numDistortions);
-
-        int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
+        //int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
+        int maxDistortionBytes = sizeof(Image) + 2000 * sizeof(float);
+        
+        printf("Running [%c] @ %d locations x %d distortions x %d maxBytes\n", curChar, numLocations, numDistortions, maxDistortionBytes);
 
         char * distortionsBuf = (char*) malloc(numDistortions * maxDistortionBytes);
+        if(distortionsBuf == NULL) {
+            printf("distortion malloc failed\n");
+            exit(-1);
+        }
 
         char * thisDistortion = distortionsBuf;
         for(int d = 0; d < numDistortions; d++) {
@@ -244,15 +253,21 @@ int main(int argc, char** argv)
          *  Setup Results Buffer Output
          ***********************************/
         float* resultBuf = (float*) malloc(rangeWidth * sizeof(float));
+        if(resultBuf == NULL) {
+            printf("result malloc failed\n");
+            exit(-1);
+        }
         results[charIndex] = resultBuf;
 
         /************************************
          *  Execute Kernel
          ***********************************/
-        printf("Evaluating %c\n", curChar);
+        printf("\tEvaluating %c\n", curChar);
     
         kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionBytes, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         //kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        
+        printf("\tEvaluating %c [COMPLETE]\n", curChar);
         
         /************************************
          *  Use Results To Guess
@@ -268,10 +283,10 @@ int main(int argc, char** argv)
          *  Clean Up For This Letter
          ***********************************/
         free(distortionsBuf);
+        printf("\tClean up [COMPLETE]\n");
     }
 
     freeTarget(device_target);
-
 
     /************************************
      *  Post Processing
@@ -332,7 +347,8 @@ int main(int argc, char** argv)
      ***********************************/
    
     printGuess(overallGuess, gi);
-    
+
+/*
     // setup empty final Guess buffer
     guess finalGuess[gi];
     guess empty;
@@ -420,11 +436,12 @@ int main(int argc, char** argv)
             printf("minigap at %d - %d\n", gapStart, gapEnd);
             gapStart = gapEnd + 1;
             gapEnd = gapStart + 1;
+            numChosen++;
         }
 
     }
 
-
+*/
 
     /************************************
      *  Global Clean Up
@@ -441,7 +458,8 @@ int main(int argc, char** argv)
     printf("\tKernel : %.3f ms\n", 1000.f * kernelDuration);
     printf("\tOverall: %.3f ms\n", 1000.f * overallDuration);
 
-    printGuess(finalGuess, gi);
+//    printGuess(finalGuess, gi);
+    printGuess(overallGuess, gi);
     
     return 0;
 }
