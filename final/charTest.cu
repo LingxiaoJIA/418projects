@@ -11,7 +11,7 @@
 extern float toBW(int bytes, float sec);
 
 __global__ void
-chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, char* target, int tWidth, int tHeight, int numLocations, float* map) {
+chartest_kernel(char* distortions, int numDistortions, char* target, int tWidth, int tHeight, int numLocations, float* map) {
 //    if(dID == 0)
 //        printf("[T%d hello]\n", tid);
 
@@ -31,13 +31,15 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
 
 //    int totalLocs = w_range * h_range;
 
+    float* dpixel = (float*) distortions;
+
     float maxVal = 0.0;
     for(int d = 0; d < numDistortions; d++) {
         // do all of the distortions at this location
 
         // calculate index of this distortion in buffer, pull out width/height
-        float * pixel = (float *) (distortions + d * maxDistortionBytes + sizeof(Image));
-        Image * header = (Image *)(distortions + d * maxDistortionBytes);
+        Image * header = (Image*)dpixel;
+        dpixel += (sizeof(Image) / sizeof(float));
         int dWidth = header->width;
         int dHeight = header->height;
         
@@ -50,15 +52,14 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
         float sum_let = 0.0;
         float sum_conv = 0.0;
         for(int dy = 0; dy < dHeight; dy++) {
+            /* calculate index into target buffer */
+            int ty = ty_0 + dy;
+            int tIndex = ty * tWidth + tx_0;
+
             for(int dx = 0; dx < dWidth; dx++) {
             
-                /* calculate index into target buffer */
-                int ty = ty_0 + dy;
-                int tx = tx_0 + dx;
-                int tIndex = ty * tWidth + tx;
-
-                float t = targetFix[tIndex];
-                float d = *(pixel++);
+                float t = targetFix[tIndex++];
+                float d = *(dpixel++);
 
                 /* Version 1
                  *   rewards matching as a percentage of pixels present */
@@ -138,7 +139,7 @@ reduce_columns_kernel(int rangeW, int rangeH, float* map, float* results) {
  ***********************************/
 
 double
-charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
+charTest(char * distortionsBuf, int numDistortions, int totalDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float * resultBuf) {
 
     const int numLocations = rangeW * rangeH;
 
@@ -150,9 +151,8 @@ charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char
     const int resultBytes = rangeW * sizeof(float);
 
     // allocate letter buffers
-    int distortionBytes = numDistortions * maxDistortionBytes;
     char * device_distortions;
-    cudaMalloc( &device_distortions, distortionBytes );
+    cudaMalloc( &device_distortions, totalDistortionBytes );
 
     // allocate results buffers (full map, and final column-reduced)
     float * device_map;
@@ -162,11 +162,11 @@ charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char
 
 
     // copy letter buffers
-    cudaMemcpy(device_distortions, distortionsBuf, distortionBytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_distortions, distortionsBuf, totalDistortionBytes, cudaMemcpyHostToDevice);
 
     double kernelStartTime = CycleTimer::currentSeconds();
     // run map evaluation kernel
-    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, maxDistortionBytes, device_target, targetW, targetH, numLocations, device_map);
+    chartest_kernel<<<blocks, threadsPerBlock>>>(device_distortions, numDistortions, device_target, targetW, targetH, numLocations, device_map);
     cudaThreadSynchronize();
     double kernelEndTime = CycleTimer::currentSeconds();
 

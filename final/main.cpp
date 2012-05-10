@@ -9,7 +9,7 @@
 #include "defines.h"
 
 // CUDA helper functions
-double charTest(char * distortionsBuf, int numDistortions, int maxDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
+double charTest(char * distortionsBuf, int numDistortions, int totalDistortionBytes, char * device_target, int targetW, int targetH, int rangeW, int rangeH, float* resultBuf);
 char * sendTarget(char * targetBuf, int targetBytes);
 void freeTarget(char* device_target);
 
@@ -268,7 +268,7 @@ int main(int argc, char** argv)
         infile.close();
         
         //int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
-        int maxDistortionBytes = sizeof(Image) + 4000 * sizeof(float);
+        int maxDistortionBytes = sizeof(Image) + 3000 * sizeof(float);
         
         printf("Running [%c] @ %d locations x %d distortions x %d maxBytes\n", curChar, numLocations, numDistortions, maxDistortionBytes);
 
@@ -279,12 +279,14 @@ int main(int argc, char** argv)
         }
 
         char * thisDistortion = distortionsBuf;
+        int totalDistortionBytes = 0;
         for(int d = 0; d < numDistortions; d++) {
             char temp[10];
             sprintf(temp, "%d", d);
             std::string distortionPath = library + charName + "/" + temp + ".bmp";
-            imageRead(thisDistortion, (char *)distortionPath.c_str());
-            thisDistortion += maxDistortionBytes;
+            int bytes = imageRead(thisDistortion, (char *)distortionPath.c_str());
+            totalDistortionBytes += bytes;
+            thisDistortion += bytes;
         }
         
         /************************************
@@ -302,7 +304,7 @@ int main(int argc, char** argv)
          ***********************************/
         printf("\tEvaluating %c\n", curChar);
     
-        kernelDuration += charTest(distortionsBuf, numDistortions, maxDistortionBytes, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
+        kernelDuration += charTest(distortionsBuf, numDistortions, totalDistortionBytes, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         //kernelDuration += charTestSequential(distortionsBuf, numDistortions, maxDistortionSize, device_target, targetWidth, targetHeight, rangeWidth, rangeHeight, resultBuf);
         
         printf("\tEvaluating %c [COMPLETE]\n", curChar);
