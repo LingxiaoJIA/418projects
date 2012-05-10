@@ -102,9 +102,7 @@ void postProcessL2(guess * queue) {
 
 void postProcessL3(guess * queue) {
     
-    processFavor(queue, std::string("69bdgpq"), std::string("oucn"), 0.04);
-    sort(queue);
-    processFavor(queue, std::string("69bdgpq"), std::string("oucn"), 0.04);
+    processFavor(queue, std::string("69abdgpq"), std::string("oucn"), 0.02);
     sort(queue);
 
 }
@@ -419,7 +417,7 @@ int main(int argc, char** argv)
 
             unsigned int gap_width = getGapWidth(overallGuess, gi, i);
             if(gap_width == 1)
-                continue;
+                overallGuess[i].val = overallGuess[i].val - 0.15;
             if(gap_width == 2)
                 overallGuess[i].val = overallGuess[i].val - 0.1;
 
