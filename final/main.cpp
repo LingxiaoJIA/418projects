@@ -236,7 +236,28 @@ int main(int argc, char** argv)
     int rangeWidth = targetWidth - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int rangeHeight = targetHeight - EDGE_DONT_BOTHER;  // dont both with some of the edges
     int numLocations = rangeWidth * rangeHeight;
+        
+        
+    // read in library stats file
+    std::string libStatFile = library + "stats.txt";
     
+    std::ifstream infile(libStatFile.c_str());
+    if(!infile) {
+        printf("\tStatefile read %s failed!\n", libStatFile.c_str());
+        exit(-1);
+    }
+    int maxSize;
+    infile >> maxSize;
+    infile.close();
+    maxSize *= 3;
+    
+    // malloc a distortion buffer (reused each time)
+    printf("Distortion Buffer Size : %d\n", maxSize);
+    char * distortionsBuf = (char*) malloc(maxSize);
+    if(distortionsBuf == NULL) {
+        printf("distortion malloc failed\n");
+        exit(-1);
+    }
 
     float * results[numChars];
     int minWidth[numChars];
@@ -267,16 +288,8 @@ int main(int argc, char** argv)
         infile >> minWidth[charIndex];
         infile.close();
         
-        //int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
-        int maxDistortionBytes = sizeof(Image) + 3000 * sizeof(float);
         
-        printf("Running [%c] @ %d locations x %d distortions x %d maxBytes\n", curChar, numLocations, numDistortions, maxDistortionBytes);
-
-        char * distortionsBuf = (char*) malloc(numDistortions * maxDistortionBytes);
-        if(distortionsBuf == NULL) {
-            printf("distortion malloc failed\n");
-            exit(-1);
-        }
+        printf("Running [%c] @ %d locations x %d distortions\n", curChar, numLocations, numDistortions);
 
         char * thisDistortion = distortionsBuf;
         int totalDistortionBytes = 0;
@@ -288,6 +301,7 @@ int main(int argc, char** argv)
             totalDistortionBytes += bytes;
             thisDistortion += bytes;
         }
+        printf("TDB: %d\n", totalDistortionBytes);
         
         /************************************
          *  Setup Results Buffer Output
@@ -310,22 +324,14 @@ int main(int argc, char** argv)
         printf("\tEvaluating %c [COMPLETE]\n", curChar);
         
         /************************************
-         *  Use Results To Guess
-         ***********************************/
-        
-        /************************************
          *  Write Map To Image
          ***********************************/
         //std::string resultPath = "./res/" + charName + "_map";
         //imageWrite( resultBuf, resultPath.c_str(), rangeWidth, rangeHeight);
         
-        /************************************
-         *  Clean Up For This Letter
-         ***********************************/
-        free(distortionsBuf);
-        printf("\tClean up [COMPLETE]\n");
     }
 
+    free(distortionsBuf);
     freeTarget(device_target);
 
     /************************************
