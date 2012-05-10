@@ -1,17 +1,23 @@
 #!/usr/bin/python
 
-import os
+import os, operator
 
 #testdir = './img/phptune/'
 #testdir = './img/nettune/'
-testdir = './img/recaptchatune/'
+testdir = './img/recaptchatune_proc3/'
+#testdir = './img/nocheattest_proc3/'
 caprequired = False
+canmissone = False
+
+missed_letters = dict()
+for l in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ':
+    missed_letters[l] = 0
 
 def get_res(img):
     print 'running ' + str(img)
     #cmd = './charTest -s 0 -e 62 -p 1 -l lib/php/ '
     #cmd = './charTest -s 0 -e 26 -p 2 -l lib/net/ '
-    cmd = './charTest -s 0 -e 52 -p 1 -l lib/recaptcha/ '
+    cmd = './charTest -s 0 -e 52 -p 0 -l lib/recaptcha_v3_proc3/ '
     cmd += testdir + img
     f = os.popen(cmd)
     for l in f.readlines():
@@ -40,6 +46,10 @@ def score_fw(res, cor):
         except:
             # c not in res
             wrong += 1
+            missed_letters[c] = missed_letters[c] + 1
+    if canmissone and wrong > 0:
+        wrong -= 1
+        right += 1
     s = (float(right) / float(right+wrong))
     return s
 
@@ -51,9 +61,10 @@ def score(res,cor):
 print 'launching...'
 
 
-tot_sum = 0.0
-tot_right = 0
-tot_cnt = 0
+char_right = 0.0
+word_right = 0
+char_cnt = 0
+word_cnt = 0
 for correct in os.listdir(testdir):
     res = get_res(correct)
     correct = correct.split('.')[0]
@@ -64,12 +75,17 @@ for correct in os.listdir(testdir):
     print 'score: ',
     print("%.2f" % s),
     print '\t' + str(res) + '\n'
-    tot_sum += s
+    char_right += s * len(correct)
     if s == 1.0:
-        tot_right += 1
-    tot_cnt += 1
+        word_right += 1
+    char_cnt += len(correct)
+    word_cnt += 1
 
-print '\n\nChar Accuracy: ' + str(tot_sum / float(tot_cnt))
-print 'Word Accuracy: ' + str(float(tot_right) / float(tot_cnt))
+print 'missed letters'
+missed_letters = sorted(missed_letters.iteritems(), key=operator.itemgetter(1))
+print missed_letters
+
+print '\n\nChar Accuracy: ' + str(char_right / float(char_cnt))
+print 'Word Accuracy: ' + str(float(word_right) / float(word_cnt))
 
 

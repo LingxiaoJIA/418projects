@@ -20,6 +20,7 @@ char charLib[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 
 struct guess {
     char c;
+    int ci;
     float val;
 } ;
 
@@ -99,6 +100,16 @@ void postProcessL2(guess * queue) {
 
 }
 
+void postProcessL3(guess * queue) {
+    
+    processFavor(queue, std::string("69bdgpq"), std::string("oucn"), 0.04);
+    sort(queue);
+    processFavor(queue, std::string("69bdgpq"), std::string("oucn"), 0.04);
+    sort(queue);
+
+}
+
+
 /********************************************
  *  Misc Helper Functions
  * *****************************************/
@@ -113,6 +124,27 @@ void printGuess(guess * g, int num) {
     printf("***************************************\n");
     for(int i=0; i < num; i++)
         printf("%c ", g[i].c);
+    printf("\n");
+}
+
+unsigned int getGapWidth(guess * g, int gi, int index) {
+    int left = index;
+    int right = index;
+    while(left >= 0 && g[left].ci != -1)
+        left--;
+    while(right <= gi-1 && g[right].ci != -1)
+        right++;
+    return(right-left-1);
+}
+
+void printGuess(guess * fg, guess * og, int num) {
+    printf("***************************************\n");
+    for(int i=0; i < num; i++) {
+        if(fg[i].c != ' ')
+            printf("[%c]", fg[i].c);
+        else
+            printf(" %c ", og[i].c);
+    }
     printf("\n");
 }
 
@@ -190,6 +222,12 @@ int main(int argc, char** argv)
         printf("Target image read failed\n");
         exit(-1);
     }
+   /* for(int i = 148*20; i < 148*21; i++) {
+        float d = ((float*)targetBuf)[i];
+        float vEdge = (d > 0.5)?1.0:0.0;
+        float hEdge = (d > 0.7 || (d > 0.3 && d < 0.5))?1.0:0.0;
+        printf("%f : %f - %f\n", d, vEdge, hEdge);
+    } */
     char * device_target = sendTarget((targetBuf+sizeof(Image)), (targetBytes-sizeof(Image)));
     printf("Setting up target [COMPLETE]\n");
 
@@ -203,6 +241,7 @@ int main(int argc, char** argv)
     
 
     float * results[numChars];
+    int minWidth[numChars];
     for(int charIndex = startIndex; charIndex < endIndex; charIndex++) {
         char curChar = charLib[charIndex];
 
@@ -227,10 +266,11 @@ int main(int argc, char** argv)
         int numDistortions, maxDistortionSize;
         infile >> numDistortions;
         infile >> maxDistortionSize;
+        infile >> minWidth[charIndex];
         infile.close();
         
         //int maxDistortionBytes = sizeof(Image) + maxDistortionSize * sizeof(float);
-        int maxDistortionBytes = sizeof(Image) + 2000 * sizeof(float);
+        int maxDistortionBytes = sizeof(Image) + 4000 * sizeof(float);
         
         printf("Running [%c] @ %d locations x %d distortions x %d maxBytes\n", curChar, numLocations, numDistortions, maxDistortionBytes);
 
@@ -291,11 +331,12 @@ int main(int argc, char** argv)
     /************************************
      *  Post Processing
      ***********************************/
-    guess overallGuess[20];
+    unsigned int numWindows = (targetWidth / WINDOW) + 1;
+    guess overallGuess[numWindows];
 
     printf("Beginning post processing\n");
     int gi = 0;
-    for(int xmin=0; xmin < targetWidth - WINDOW; xmin += (WINDOW / 2)) {
+    for(int xmin=0; xmin < targetWidth - WINDOW; xmin += WINDOW) {
         int xmax = xmin + WINDOW - 1;
         printf("Window %d - %d\n", xmin, xmax);
 
@@ -326,27 +367,88 @@ int main(int argc, char** argv)
                     queue[i] = queue[i-1];
                 queue[insert].val = maxV;
                 queue[insert].c = c;
+                queue[insert].ci = charIndex;
             }
         }
 
         printQueue(queue);
 
         // clean up queue using post processing (character knowledge)
-        if(postProcLevel >= 1)
+        if(postProcLevel == 1)
             postProcessL1(queue);
-        if(postProcLevel >= 2)
+        if(postProcLevel == 2) {
+            postProcessL1(queue);
             postProcessL2(queue);
+        }
+        if(postProcLevel == 3)
+            postProcessL3(queue);
 
         printQueue(queue);
 
         overallGuess[gi++] = queue[0];
     }
+
+    /************************************
+     *  Recaptcha Final Guess Generation
+     ***********************************/
+    guess empty;
+    empty.c = ' ';
+    empty.ci = -1;
+    empty.val = 0.0;
+
+    guess finalGuess[gi];
+    for(int i=0; i <gi; i++) {
+        finalGuess[i] = empty;
+    }
+    
+    // trim edges
+    for(unsigned int i=0; overallGuess[i].val < 0.1; i++)
+        overallGuess[i] = empty;
+    for(unsigned int i=gi-1; overallGuess[i].val < 0.1; i--)
+        overallGuess[i] = empty;
+
+    bool done = false;
+    unsigned int numChosen = 0;
+    while(!done) {
+        printGuess(finalGuess, overallGuess, gi);
+
+        unsigned int maxi = 0;
+        for(unsigned int i = 0 ; i < gi; i++) {
+            if(overallGuess[i].ci == -1)
+                continue;
+
+            unsigned int gap_width = getGapWidth(overallGuess, gi, i);
+            if(gap_width == 1)
+                continue;
+            if(gap_width == 2)
+                overallGuess[i].val = overallGuess[i].val - 0.1;
+
+            if(overallGuess[i].val > overallGuess[maxi].val)
+                maxi = i;
+        }
+        if(overallGuess[maxi].val < 0.1)
+            break;
+
+        int clearRadius = (minWidth[overallGuess[maxi].ci] / WINDOW) / 2;
+        printf("Max %c at %d val %f cw %d\n", overallGuess[maxi].c, maxi, overallGuess[maxi].val, clearRadius);
+        finalGuess[maxi] = overallGuess[maxi];
+        for(unsigned int i = maxi - clearRadius; i <= maxi + clearRadius; i++) {
+            overallGuess[i] = empty;
+        }
+        
+        numChosen++;
+        if(numChosen >= 7)
+            done = true;
+    }
+    printGuess(finalGuess, overallGuess, gi);
+
+
     
     /************************************
-     *  Final Guess Generation
+     *  Non-Recaptcha Final Guess Generation
      ***********************************/
    
-    printGuess(overallGuess, gi);
+    //printGuess(overallGuess, gi);
 
 /*
     // setup empty final Guess buffer
@@ -458,8 +560,8 @@ int main(int argc, char** argv)
     printf("\tKernel : %.3f ms\n", 1000.f * kernelDuration);
     printf("\tOverall: %.3f ms\n", 1000.f * overallDuration);
 
-//    printGuess(finalGuess, gi);
-    printGuess(overallGuess, gi);
+    printGuess(finalGuess, gi);
+//    printGuess(overallGuess, gi);
     
     return 0;
 }

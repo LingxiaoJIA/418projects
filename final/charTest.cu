@@ -187,14 +187,30 @@ chartest_kernel(char* distortions, int numDistortions, int maxDistortionBytes, c
                  *   for recaptcha */
 #ifdef v3
                 sum_let += d;
-                sum_conv += (2*d*t - 0.2*t - 0.3*d);
+                sum_conv += (2.0*d*t - 0.2*t - 0.3*d);
+#endif
+                
+                /* Version 4
+                 *   for recaptcha with horiz/vert edge tagging */
+#ifdef v4
+                float d_v = (d > 0.5)?1.0:0.0;
+                float d_h = (d > 0.7 || (d > 0.3 && d < 0.5))?1.0:0.0;
+                
+                float t_v = (t > 0.5)?1.0:0.0;
+                float t_h = (t > 0.7 || (t > 0.3 && t < 0.5))?1.0:0.0;
 
+                sum_let += (d_v + d_h);
+                sum_conv += 2.0*(d_v * t_v) + 2.0*(d_h * t_h);
+                sum_conv -= 0.2*(t_h + t_v);
+                sum_conv -= 0.3*(d_h + d_v);
 #endif
                  
             }
         }
         //float val = (float)sum_conv;
         float val = (float)(sum_conv / sum_let);
+        //float val = (float)(sum_conv / (sum_let + 40.0));
+        //float val = (float)(sum_conv / max(sum_let, 110.0));
         val = (val < 0.0)?0.0:val;
         maxVal = (val > maxVal)?val:maxVal;
     }
