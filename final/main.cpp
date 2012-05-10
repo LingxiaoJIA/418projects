@@ -301,7 +301,6 @@ int main(int argc, char** argv)
             totalDistortionBytes += bytes;
             thisDistortion += bytes;
         }
-        printf("TDB: %d\n", totalDistortionBytes);
         
         /************************************
          *  Setup Results Buffer Output

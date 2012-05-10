@@ -89,16 +89,21 @@ chartest_kernel(char* distortions, int numDistortions, char* target, int tWidth,
                 /* Version 4
                  *   for recaptcha with horiz/vert edge tagging */
 #ifdef v4
-                float d_v = (d > 0.5)?1.0:0.0;
-                float d_h = (d > 0.7 || (d > 0.3 && d < 0.5))?1.0:0.0;
+                bool d_v = (d > 0.5);
+                bool d_h = (d > 0.7 || (d > 0.3 && !d_v));
                 
-                float t_v = (t > 0.5)?1.0:0.0;
-                float t_h = (t > 0.7 || (t > 0.3 && t < 0.5))?1.0:0.0;
+                bool t_v = (t > 0.5);
+                bool t_h = (t > 0.7 || (t > 0.3 && !t_v));
 
-                sum_let += (d_v + d_h);
-                sum_conv += 2.0*(d_v * t_v) + 2.0*(d_h * t_h);
-                sum_conv -= 0.2*(t_h + t_v);
-                sum_conv -= 0.3*(d_h + d_v);
+                sum_let += d_v?1.0:0.0;
+                sum_let += d_h?1.0:0.0;
+
+                sum_conv += (d_v && t_v)?2.0:0.0;
+                sum_conv += (d_h && t_h)?2.0:0.0;
+                sum_conv -= (t_h)?0.2:0.0;
+                sum_conv -= (t_v)?0.2:0.0;
+                sum_conv -= (d_h)?0.3:0.0;
+                sum_conv -= (d_v)?0.3:0.0;
 #endif
                  
             }
@@ -301,16 +306,21 @@ chartest_kernel_sequential(float* distortions, int numDistortions, int maxDistor
                 /* Version 4
                  *   for recaptcha with horiz/vert edge tagging */
 #ifdef v4
-                float d_v = (d > 0.5)?1.0:0.0;
-                float d_h = (d > 0.7 || (d > 0.3 && d < 0.5))?1.0:0.0;
+                bool d_v = (d > 0.5);
+                bool d_h = (d > 0.7 || (d > 0.3 && d < 0.5));
                 
-                float t_v = (t > 0.5)?1.0:0.0;
-                float t_h = (t > 0.7 || (t > 0.3 && t < 0.5))?1.0:0.0;
+                bool t_v = (t > 0.5);
+                bool t_h = (t > 0.7 || (t > 0.3 && t < 0.5));
 
-                sum_let += (d_v + d_h);
-                sum_conv += 2.0*(d_v * t_v) + 2.0*(d_h * t_h);
-                sum_conv -= 0.2*(t_h + t_v);
-                sum_conv -= 0.3*(d_h + d_v);
+                sum_let += d_v?1.0:0.0;
+                sum_let += d_h?1.0:0.0;
+
+                sum_conv += (d_v && t_v)?2.0:0.0;
+                sum_conv += (d_h && t_h)?2.0:0.0;
+                sum_conv -= (t_h)?0.2:0.0;
+                sum_conv -= (t_v)?0.2:0.0;
+                sum_conv -= (d_h)?0.3:0.0;
+                sum_conv -= (d_v)?0.3:0.0;
 #endif
                  
             }
